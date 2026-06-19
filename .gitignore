@@ -1,5 +1,6 @@
 node_modules/
 prdash
+bin/
 *.test
 .DS_Store
 sdd/
