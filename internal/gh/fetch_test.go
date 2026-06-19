@@ -70,7 +70,7 @@ func TestFetchPassesQueryArgs(t *testing.T) {
 	}
 	args := f.gotArgs[0]
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"api", "graphql", "author:@me", "review-requested:@me", "first=25"} {
+	for _, want := range []string{"api", "graphql", "author:@me", "review-requested:@me", "sort:updated-desc", "first=25"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("args missing %q: %v", want, args)
 		}

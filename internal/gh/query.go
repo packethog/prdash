@@ -16,7 +16,9 @@ fragment pr on PullRequest {
   latestOpinionatedReviews(first: 50) { nodes { state } }
 }`
 
+// sort:updated-desc puts the most recently active PRs first; GitHub's search
+// has no stable default order without it.
 const (
-	authoredFilter  = "is:open is:pr archived:false author:@me"
-	reviewingFilter = "is:open is:pr archived:false review-requested:@me"
+	authoredFilter  = "is:open is:pr archived:false author:@me sort:updated-desc"
+	reviewingFilter = "is:open is:pr archived:false review-requested:@me sort:updated-desc"
 )
