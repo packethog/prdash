@@ -342,6 +342,18 @@ func TestInlinePromptSitsUnderSelectedRow(t *testing.T) {
 	}
 }
 
+func TestActionedRowRendersStruck(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width = 90
+	rows := []pr.PR{{Repo: "o/r", Number: 1, URL: "u1", Title: "t", ReviewDecision: "APPROVED", RollupState: "SUCCESS"}}
+	plain := m.renderTable(rows, -1)
+	m.markActioned("u1")
+	struck := m.renderTable(rows, -1)
+	if plain == struck {
+		t.Error("an actioned (closed/merged) row should render struck-through, not identical")
+	}
+}
+
 func TestInlinePromptFollowsCapturedPRAfterReorder(t *testing.T) {
 	m := New(stubRunner{}, 45*time.Second, 50)
 	m.width, m.height = 90, 24

@@ -15,6 +15,32 @@ func authoredPR() pr.PR {
 	return pr.PR{Repo: "o/r", Number: 7, URL: "u", Title: "t"}
 }
 
+func TestCloseDoneMarksActioned(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10)
+	m.Update(closeDoneMsg{p: pr.PR{Repo: "o/r", Number: 1, URL: "u1"}})
+	if !m.actioned["u1"] {
+		t.Error("closeDone should mark the PR struck (actioned) until the refetch drops it")
+	}
+}
+
+func TestActionedPrunedWhenRowGone(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10)
+	m.markActioned("u1")
+	m.Update(prsFetchedMsg{res: gh.FetchResult{Authored: []pr.PR{{URL: "u2"}}}})
+	if m.actioned["u1"] {
+		t.Error("an actioned PR no longer listed should be pruned")
+	}
+}
+
+func TestActionedKeptWhileStillListed(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10)
+	m.markActioned("u1")
+	m.Update(prsFetchedMsg{res: gh.FetchResult{Authored: []pr.PR{{URL: "u1"}}}})
+	if !m.actioned["u1"] {
+		t.Error("an actioned PR still listed should stay struck")
+	}
+}
+
 func TestModalDismissedWhenCapturedPRVanishes(t *testing.T) {
 	m := New(stubRunner{}, time.Second, 10)
 	m.conn = connLive

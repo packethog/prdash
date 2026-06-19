@@ -154,12 +154,16 @@ func (m *Model) renderTable(rows []pr.PR, sel int) string {
 
 	style := func(row, col int) lipgloss.Style {
 		st := lipgloss.NewStyle().Padding(0) // no table padding; cells are pre-sized
-		switch {
-		case row == table.HeaderRow:
+		if row == table.HeaderRow {
 			return st.Inherit(dimStyle)
-		case col == 2:
+		}
+		if m.actioned[rows[row].URL] {
+			return st.Strikethrough(true).Inherit(dimStyle) // closed/merged, pending removal
+		}
+		switch col {
+		case 2:
 			return st.Inherit(reviewStyle(pr.Review(rows[row])))
-		case col == 3:
+		case 3:
 			return st.Inherit(ciStyle(pr.CI(rows[row])))
 		}
 		return st
@@ -193,7 +197,11 @@ func (m *Model) renderTable(rows []pr.PR, sel int) string {
 		if m.width > 0 {
 			line = padTo(line, m.width)
 		}
-		selLine = selectedStyle.Render(line)
+		s := selectedStyle
+		if m.actioned[p.URL] {
+			s = s.Strikethrough(true) // closed/merged + selected: struck highlight bar
+		}
+		selLine = s.Render(line)
 	}
 
 	if m.width <= 0 {

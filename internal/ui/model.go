@@ -50,6 +50,7 @@ type Model struct {
 	closing        bool
 	pendingRefresh bool
 	toast          string
+	actioned       map[string]bool // URLs of PRs closed/merged this session, struck until the refetch drops them
 
 	width, height int
 }

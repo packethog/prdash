@@ -30,6 +30,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mergeDoneMsg:
 		m.merging = false
 		m.toast = "Merged " + msg.p.Ref()
+		m.markActioned(msg.p.URL)
 		if !m.fetching {
 			m.fetching = true
 			m.tickGen++
@@ -44,6 +45,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case closeDoneMsg:
 		m.closing = false
 		m.toast = "Closed " + msg.p.Ref()
+		m.markActioned(msg.p.URL)
 		if !m.fetching {
 			m.fetching = true
 			m.tickGen++
@@ -66,6 +68,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// markActioned flags a PR (by URL) as closed/merged this session so its row is
+// struck through until a refetch drops it from the list.
+func (m *Model) markActioned(url string) {
+	if m.actioned == nil {
+		m.actioned = map[string]bool{}
+	}
+	m.actioned[url] = true
+}
+
+// pruneActioned drops strike-through marks for PRs that the latest fetch no
+// longer lists (they have fallen off the page), keeping marks for any that
+// still appear (e.g. while the search index catches up).
+func (m *Model) pruneActioned() {
+	if len(m.actioned) == 0 {
+		return
+	}
+	kept := map[string]bool{}
+	for _, p := range m.authored {
+		if m.actioned[p.URL] {
+			kept[p.URL] = true
+		}
+	}
+	m.actioned = kept
+}
+
 func (m *Model) onFetched(msg prsFetchedMsg) (tea.Model, tea.Cmd) {
 	m.authored = msg.res.Authored
 	m.reviewing = msg.res.Reviewing
@@ -80,6 +107,7 @@ func (m *Model) onFetched(msg prsFetchedMsg) (tea.Model, tea.Cmd) {
 	if m.modal != modalNone && indexByURL(m.authored, m.modalPR.URL) < 0 {
 		m.modal = modalNone
 	}
+	m.pruneActioned()
 	if m.pendingRefresh {
 		m.pendingRefresh = false
 		m.fetching = true
