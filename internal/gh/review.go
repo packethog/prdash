@@ -39,11 +39,11 @@ func parseSurfaceRef(out []byte) (string, error) {
 }
 
 // reviewCommand builds the shell command run in the new pane:
-// `<provider> <args...> '<prompt>'`. Every part is shell-quoted so flags and the
-// prompt survive the pane's shell as individual arguments.
+// `<provider> <args...> '<prompt>'`. Every part — including the provider — is
+// shell-quoted so it survives the pane's shell as a single argument.
 func reviewCommand(provider string, args []string, prompt string) string {
 	parts := make([]string, 0, len(args)+2)
-	parts = append(parts, provider)
+	parts = append(parts, shellQuote(provider))
 	for _, a := range args {
 		parts = append(parts, shellQuote(a))
 	}

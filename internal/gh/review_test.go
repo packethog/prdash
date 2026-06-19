@@ -41,11 +41,11 @@ func TestParseSurfaceRef(t *testing.T) {
 }
 
 func TestReviewCommand(t *testing.T) {
-	if got := reviewCommand("claude", nil, "review https://u"); got != "claude 'review https://u'" {
+	if got := reviewCommand("claude", nil, "review https://u"); got != "'claude' 'review https://u'" {
 		t.Errorf("no args: %q", got)
 	}
 	got := reviewCommand("claude", []string{"--permission-mode", "auto"}, "go")
-	if got != "claude '--permission-mode' 'auto' 'go'" {
+	if got != "'claude' '--permission-mode' 'auto' 'go'" {
 		t.Errorf("with args: %q", got)
 	}
 }
@@ -61,7 +61,7 @@ func TestStartReviewDrivesCmux(t *testing.T) {
 	if strings.Join(f.gotArgs[0], " ") != "new-pane --type terminal --direction down --focus true" {
 		t.Errorf("call 0 = %v", f.gotArgs[0])
 	}
-	if strings.Join(f.gotArgs[1], " ") != "send --surface surface:4 -- claude '--permission-mode' 'auto' 'review https://u'" {
+	if strings.Join(f.gotArgs[1], " ") != "send --surface surface:4 -- 'claude' '--permission-mode' 'auto' 'review https://u'" {
 		t.Errorf("call 1 = %v", f.gotArgs[1])
 	}
 	if strings.Join(f.gotArgs[2], " ") != "send-key --surface surface:4 enter" {

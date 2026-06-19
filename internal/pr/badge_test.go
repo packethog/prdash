@@ -43,6 +43,10 @@ func TestReviewCommented(t *testing.T) {
 		{"opinionated changes-requested with empty latestReviews", PR{ReviewDecision: "", LatestReviews: nil, OpinionatedReviews: []string{"CHANGES_REQUESTED"}}, ReviewChangesRequested},
 		{"opinionated changes wins over latestReviews approval", PR{ReviewDecision: "", LatestReviews: []string{"APPROVED"}, OpinionatedReviews: []string{"CHANGES_REQUESTED"}}, ReviewChangesRequested},
 		{"opinionated approval with latest comment shows approved", PR{ReviewDecision: "", LatestReviews: []string{"COMMENTED"}, OpinionatedReviews: []string{"APPROVED"}}, ReviewApproved},
+		// A required-review rule that is not yet satisfied must NOT be upgraded to
+		// Approved by an insufficient per-reviewer approval.
+		{"review required is not upgraded by an opinion approval", PR{ReviewDecision: "REVIEW_REQUIRED", OpinionatedReviews: []string{"APPROVED"}}, ReviewPending},
+		{"review required with a comment shows commented", PR{ReviewDecision: "REVIEW_REQUIRED", LatestReviews: []string{"COMMENTED"}}, ReviewCommented},
 	}
 	for _, c := range cases {
 		if got := Review(c.p); got != c.want {
