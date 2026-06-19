@@ -1,5 +1,7 @@
 # prdash
 
+[![ci](https://github.com/packethog/prdash/actions/workflows/ci.yml/badge.svg)](https://github.com/packethog/prdash/actions/workflows/ci.yml)
+
 A small terminal dashboard for your GitHub pull requests: the ones you
 **authored** and the ones **awaiting your review**, across every repo your
 active `gh` account can see. Shows per-PR review and CI state, and lets you
@@ -29,10 +31,20 @@ your existing auth.
 
 ## Install
 
+**Prebuilt binary** (from the [latest release](https://github.com/packethog/prdash/releases/latest)) — pick your platform:
+
 ```bash
+# macOS arm64 (Apple Silicon); swap for darwin_amd64 / linux_amd64 / linux_arm64
+curl -sSL https://github.com/packethog/prdash/releases/latest/download/prdash_darwin_arm64.tar.gz | tar -xz
+./prdash_darwin_arm64
+```
+
+**With Go:**
+
+```bash
+go install github.com/packethog/prdash@latest   # onto your PATH
+# or build locally:
 go build -o prdash .
-# optionally: install onto your PATH
-go install github.com/packethog/prdash@latest
 ```
 
 ## Usage
