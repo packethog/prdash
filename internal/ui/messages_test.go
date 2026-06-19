@@ -44,6 +44,7 @@ func TestMergeCmd(t *testing.T) {
 }
 
 func TestOpenCmd(t *testing.T) {
+	t.Setenv("CMUX_WORKSPACE_ID", "") // force the stubbed gh path; never exec real cmux
 	msg := openCmd(stubRunner{}, pr.PR{URL: "u"})()
 	if _, ok := msg.(openedMsg); !ok {
 		t.Fatalf("expected openedMsg, got %T", msg)

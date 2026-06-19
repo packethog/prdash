@@ -3,11 +3,20 @@ package gh
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/packethog/prdash/internal/pr"
 )
+
+// TestMain clears CMUX_WORKSPACE_ID so no test in this package ever execs the
+// real `cmux` binary (which would spawn a browser pane) when the suite runs
+// inside cmux. Individual tests still set it explicitly when needed.
+func TestMain(m *testing.M) {
+	_ = os.Unsetenv("CMUX_WORKSPACE_ID")
+	os.Exit(m.Run())
+}
 
 func TestMergeBuildsArgs(t *testing.T) {
 	cases := []struct {

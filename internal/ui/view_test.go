@@ -14,9 +14,12 @@ import (
 )
 
 // TestMain forces a 256-color profile so lipgloss emits ANSI escape sequences
-// even when tests run outside a TTY (e.g., CI, go test pipe).
+// even when tests run outside a TTY (e.g., CI, go test pipe). It also clears
+// CMUX_WORKSPACE_ID so no test in this package ever execs the real `cmux`
+// binary (which would spawn a browser pane) when the suite runs inside cmux.
 func TestMain(m *testing.M) {
 	lipgloss.SetColorProfile(termenv.ANSI256)
+	_ = os.Unsetenv("CMUX_WORKSPACE_ID")
 	os.Exit(m.Run())
 }
 
