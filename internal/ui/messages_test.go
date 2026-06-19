@@ -72,15 +72,3 @@ func TestReviewCmdLaunches(t *testing.T) {
 		t.Fatalf("msg = %#v", msg)
 	}
 }
-
-func TestReviewCmdRenderErrorSurfaces(t *testing.T) {
-	rv, err := config.Parse("claude", "{{.Missing}}") // unknown field -> render error
-	if err != nil {
-		t.Fatal(err)
-	}
-	msg := reviewCmd(stubRunner{}, rv, pr.PR{URL: "https://u"})()
-	r, ok := msg.(reviewLaunchedMsg)
-	if !ok || r.err == nil {
-		t.Fatalf("expected render error, msg = %#v", msg)
-	}
-}

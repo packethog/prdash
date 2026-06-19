@@ -13,18 +13,20 @@ func surfaceArgs(provider string) []string {
 	return []string{"new-surface", "--type", "agent-session", "--provider", provider, "--focus", "true"}
 }
 
-func sendArgs(ref, text string) []string { return []string{"send", "--surface", ref, text} }
+func sendArgs(ref, text string) []string { return []string{"send", "--surface", ref, "--", text} }
 
 func enterArgs(ref string) []string { return []string{"send-key", "--surface", ref, "enter"} }
 
-// parseSurfaceRef pulls the surface ref from `cmux new-surface` stdout, which
-// prints a ref like "surface:4".
+// parseSurfaceRef pulls the surface ref from `cmux new-surface` stdout. cmux
+// prints refs in its default format (e.g. "surface:4"); scan for that token so
+// a stray warning or trailing line does not get mistaken for the ref.
 func parseSurfaceRef(out []byte) (string, error) {
-	fields := strings.Fields(string(out))
-	if len(fields) == 0 {
-		return "", errors.New("cmux new-surface returned no surface ref")
+	for _, f := range strings.Fields(string(out)) {
+		if strings.HasPrefix(f, "surface:") {
+			return f, nil
+		}
 	}
-	return fields[len(fields)-1], nil
+	return "", errors.New("cmux new-surface returned no surface ref")
 }
 
 // StartReview spawns a cmux agent surface for the given provider and injects the

@@ -20,8 +20,12 @@ func TestParseSurfaceRef(t *testing.T) {
 	if err != nil || ref != "surface:4" {
 		t.Errorf("ref=%q err=%v", ref, err)
 	}
-	if _, err := parseSurfaceRef([]byte("  \n")); err == nil {
+	if _, err = parseSurfaceRef([]byte("  \n")); err == nil {
 		t.Error("expected error on empty output")
+	}
+	ref, err = parseSurfaceRef([]byte("warning: deprecated flag\nsurface:7\n"))
+	if err != nil || ref != "surface:7" {
+		t.Errorf("noisy output: ref=%q err=%v", ref, err)
 	}
 }
 
@@ -36,7 +40,7 @@ func TestStartReviewDrivesCmux(t *testing.T) {
 	if strings.Join(f.gotArgs[0], " ") != "new-surface --type agent-session --provider claude --focus true" {
 		t.Errorf("call 0 = %v", f.gotArgs[0])
 	}
-	if strings.Join(f.gotArgs[1], " ") != "send --surface surface:4 review https://u" {
+	if strings.Join(f.gotArgs[1], " ") != "send --surface surface:4 -- review https://u" {
 		t.Errorf("call 1 = %v", f.gotArgs[1])
 	}
 	if strings.Join(f.gotArgs[2], " ") != "send-key --surface surface:4 enter" {

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -45,16 +46,24 @@ func Parse(provider, prompt string) (Review, error) {
 	if err != nil {
 		return Review{}, fmt.Errorf("review.prompt template: %w", err)
 	}
+	// Reject prompts that reference unknown fields now (executed against zero
+	// data), so an invalid prompt is disabled at load time, not at first keypress.
+	if err := tmpl.Execute(io.Discard, tmplData{}); err != nil {
+		return Review{}, fmt.Errorf("review.prompt template: %w", err)
+	}
 	return Review{Provider: provider, Prompt: prompt, tmpl: tmpl}, nil
 }
 
-func configPath() string {
+func configPath() (string, error) {
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "prdash", "config.toml")
+	return filepath.Join(base, "prdash", "config.toml"), nil
 }
 
 // Load reads the review config from the XDG config path. A missing file yields a
@@ -62,8 +71,12 @@ func configPath() string {
 // provider, empty/unparseable prompt) yields a disabled Review and a non-nil
 // error so the caller can print a one-line note; prdash still starts.
 func Load() (Review, error) {
+	path, err := configPath()
+	if err != nil {
+		return Review{}, nil // cannot resolve a config location → treat as no config
+	}
 	var f fileSchema
-	if _, err := toml.DecodeFile(configPath(), &f); err != nil {
+	if _, err := toml.DecodeFile(path, &f); err != nil {
 		if os.IsNotExist(err) {
 			return Review{}, nil
 		}

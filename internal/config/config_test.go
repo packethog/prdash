@@ -38,6 +38,12 @@ func TestParseRejectsBadTemplate(t *testing.T) {
 	}
 }
 
+func TestParseRejectsUnknownTemplateField(t *testing.T) {
+	if _, err := Parse("claude", "review {{.Missing}}"); err == nil {
+		t.Fatal("expected error for unknown template field")
+	}
+}
+
 func TestRenderSubstitutesFields(t *testing.T) {
 	r, err := Parse("claude", "{{.Repo}}#{{.Number}} {{.URL}} {{.Branch}} {{.Title}}")
 	if err != nil {
