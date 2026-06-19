@@ -298,6 +298,22 @@ func (m *Model) renderModal() string {
 	return modalBox.Render(b.String())
 }
 
+func (m *Model) renderCloseModal() string {
+	p := m.modalPR // captured when the modal opened
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Close pull request") + "\n\n")
+	b.WriteString(p.Ref() + "\n")
+	b.WriteString(truncate(p.Title, 46) + "\n\n")
+	if blockers := m.closeBlockers(); len(blockers) == 0 {
+		b.WriteString("This closes the PR (you can reopen it on GitHub).\n\n")
+		b.WriteString(dimStyle.Render("enter Close    esc Cancel"))
+	} else {
+		b.WriteString(offlineStyle.Render("✗ Blocked: "+strings.Join(blockers, "; ")) + "\n\n")
+		b.WriteString(dimStyle.Render("esc Close"))
+	}
+	return modalBox.Render(b.String())
+}
+
 // View renders the whole UI. It assembles all lines and joins them WITHOUT a
 // trailing newline, so the total line count is exactly len(top)+len(visible)+
 // len(footer) and never exceeds m.height.
@@ -324,7 +340,7 @@ func (m *Model) View() string {
 	if m.toast != "" {
 		status += "   " + m.toast
 	}
-	keys := dimStyle.Render("↑↓ move  tab switch  r refresh  m merge  o open  q quit") + hint
+	keys := dimStyle.Render("↑↓ move  tab switch  r refresh  m merge  c close  o open  q quit") + hint
 
 	all := []string{titleStyle.Render("prdash"), ""}
 	all = append(all, visible...)
@@ -337,10 +353,13 @@ func (m *Model) View() string {
 	}
 	base := strings.Join(all, "\n")
 
-	if m.modal != modalMerge {
+	if m.modal == modalNone {
 		return base
 	}
 	modal := m.renderModal()
+	if m.modal == modalClose {
+		modal = m.renderCloseModal()
+	}
 	if m.width > 0 && m.height > 0 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 	}

@@ -281,3 +281,40 @@ func TestViewNeverExceedsHeight(t *testing.T) {
 		}
 	}
 }
+
+func TestViewRoutesCloseModal(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 80, 24
+	m.conn = connLive
+	m.authored = []pr.PR{{Repo: "o/r", Number: 7, Title: "t"}}
+	m.modal = modalClose
+	m.modalPR = m.authored[0]
+	out := stripANSI(m.View())
+	if !strings.Contains(out, "Close pull request") {
+		t.Error("View should render the close modal")
+	}
+	if !strings.Contains(out, "enter Close") {
+		t.Error("armed close modal should show the confirm line")
+	}
+}
+
+func TestCloseModalShowsBlockerWhenNotLive(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 80, 24
+	m.conn = connOffline
+	m.authored = []pr.PR{{Repo: "o/r", Number: 7, Title: "t"}}
+	m.modal = modalClose
+	m.modalPR = m.authored[0]
+	if !strings.Contains(stripANSI(m.View()), "connection not live") {
+		t.Error("blocked close modal should show the connection blocker")
+	}
+}
+
+func TestFooterShowsCloseKey(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 80, 24
+	m.conn = connLive
+	if !strings.Contains(stripANSI(m.View()), "c close") {
+		t.Error("footer should advertise the close key")
+	}
+}
