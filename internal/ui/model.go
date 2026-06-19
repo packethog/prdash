@@ -47,7 +47,7 @@ type Model struct {
 	modalPR        pr.PR // PR captured when a modal opened (immune to refetch)
 	method         pr.MergeMethod
 	merging        bool
-	closing        bool //nolint:unused // used in Task 3
+	closing        bool
 	pendingRefresh bool
 	toast          string
 
