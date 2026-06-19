@@ -1,0 +1,17 @@
+{
+  "data": {
+    "authored": {
+      "nodes": [
+        {"number":1234,"title":"fix withdraw race","url":"https://github.com/malbeclabs/doublezero/pull/1234","isDraft":false,"updatedAt":"2026-06-18T15:03:09Z","repository":{"nameWithOwner":"malbeclabs/doublezero"},"reviewDecision":"APPROVED","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"ss/fix-withdraw-race","commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"SUCCESS"}}}]}},
+        {"number":88,"title":"bump runner image","url":"https://github.com/malbeclabs/infra/pull/88","isDraft":false,"updatedAt":"2026-06-18T14:00:00Z","repository":{"nameWithOwner":"malbeclabs/infra"},"reviewDecision":null,"mergeable":"MERGEABLE","mergeStateStatus":"UNSTABLE","headRefName":"ss/bump-image","latestReviews":{"nodes":[{"state":"COMMENTED"}]},"commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"PENDING"}}}]}}
+      ]
+    },
+    "reviewing": {
+      "nodes": [
+        {"number":1240,"title":"shred-oracle retry tweak","url":"https://github.com/malbeclabs/doublezero/pull/1240","isDraft":false,"updatedAt":"2026-06-18T13:00:00Z","repository":{"nameWithOwner":"malbeclabs/doublezero"},"reviewDecision":"REVIEW_REQUIRED","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"ss/retry","commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"SUCCESS"}}}]}},
+        {"number":7,"title":"draft: multicast notes","url":"https://github.com/malbeclabs/edge-feed-spec/pull/7","isDraft":true,"updatedAt":"2026-06-17T10:00:00Z","repository":{"nameWithOwner":"malbeclabs/edge-feed-spec"},"reviewDecision":null,"mergeable":"UNKNOWN","mergeStateStatus":"DRAFT","headRefName":"draft-notes","commits":{"nodes":[{"commit":{"statusCheckRollup":null}}]}},
+        {"number":1234,"title":"fix withdraw race","url":"https://github.com/malbeclabs/doublezero/pull/1234","isDraft":false,"updatedAt":"2026-06-18T15:03:09Z","repository":{"nameWithOwner":"malbeclabs/doublezero"},"reviewDecision":"APPROVED","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"ss/fix-withdraw-race","commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"SUCCESS"}}}]}}
+      ]
+    }
+  }
+}

@@ -1,0 +1,5 @@
+node_modules/
+prdash
+*.test
+.DS_Store
+sdd/
