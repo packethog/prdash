@@ -63,6 +63,7 @@ prdash --limit 25      # fetch up to 25 PRs per bucket (min 1)
 | `tab` | switch bucket (Authored ↔ Awaiting my review) |
 | `r` | refresh now |
 | `m` | merge selected (authored only; opens confirm) |
+| `c` | close selected (authored only; opens confirm) |
 | `o` | open selected PR in browser |
 | `q` / `ctrl+c` | quit |
 
@@ -75,6 +76,9 @@ approved + CI green), `esc` cancels.
   (`reviewDecision == APPROVED`), CI is passing, it is not a draft, it is
   mergeable (no conflicts / known mergeability), and the connection is `Live`.
   Default method is squash with branch deletion; `gh` re-validates server-side.
+- Closing a PR (`c`) is authored-only and asks for confirmation; it keeps the
+  branch and is reversible (reopen on GitHub). Like merge, it requires a `Live`
+  connection.
 - Network drops are handled gracefully: the last-known list stays on screen, the
   footer shows `Live`/`Stale`/`Offline`, and failed fetches retry with backoff.
 - Per-workspace PR views are intentionally **not** included — use cmux's native
