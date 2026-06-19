@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	prconfig "github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/gh"
 	"github.com/packethog/prdash/internal/ui"
 )
@@ -44,7 +45,11 @@ func main() {
 	if err != nil {
 		os.Exit(2)
 	}
-	model := ui.New(gh.NewExecRunner(), cfg.interval, cfg.limit)
+	rev, err := prconfig.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "prdash:", err) // non-fatal: review stays disabled
+	}
+	model := ui.New(gh.NewExecRunner(), cfg.interval, cfg.limit, ui.WithReview(rev))
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "prdash:", err)
 		os.Exit(1)

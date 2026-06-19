@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/pr"
 )
 
@@ -386,5 +387,33 @@ func TestFooterShowsCloseKey(t *testing.T) {
 	m.conn = connLive
 	if !strings.Contains(stripANSI(m.View()), "c close") {
 		t.Error("footer should advertise the close key")
+	}
+}
+
+func TestKeybarShowsReviewWhenEligible(t *testing.T) {
+	t.Setenv("CMUX_WORKSPACE_ID", "ws1")
+	r, err := config.Parse("claude", "review {{.URL}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(stubRunner{}, time.Second, 10, WithReview(r))
+	m.bucket = pr.AwaitingReview
+	m.width = 200
+	if !strings.Contains(m.View(), "v review") {
+		t.Error("keybar should show 'v review' when eligible")
+	}
+}
+
+func TestKeybarHidesReviewWhenNotEligible(t *testing.T) {
+	t.Setenv("CMUX_WORKSPACE_ID", "ws1")
+	r, err := config.Parse("claude", "review {{.URL}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(stubRunner{}, time.Second, 10, WithReview(r))
+	m.bucket = pr.Authored // wrong bucket
+	m.width = 200
+	if strings.Contains(m.View(), "v review") {
+		t.Error("keybar must hide 'v review' in the Authored bucket")
 	}
 }

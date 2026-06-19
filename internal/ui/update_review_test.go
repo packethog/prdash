@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/pr"
 )
 
@@ -21,5 +22,56 @@ func TestReviewLaunchedFailureToast(t *testing.T) {
 	m.Update(reviewLaunchedMsg{p: pr.PR{Repo: "o/r", Number: 7}, err: errors.New("boom")})
 	if m.toast != "Review failed: boom" {
 		t.Errorf("toast = %q", m.toast)
+	}
+}
+
+func enabledReview(t *testing.T) config.Review {
+	t.Helper()
+	r, err := config.Parse("claude", "review {{.URL}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func TestReviewKeyLaunchesWhenEligible(t *testing.T) {
+	t.Setenv("CMUX_WORKSPACE_ID", "ws1")
+	m := New(stubRunner{}, time.Second, 10, WithReview(enabledReview(t)))
+	m.cmux = stubRunner{out: []byte("surface:4")}
+	m.bucket = pr.AwaitingReview
+	m.reviewing = []pr.PR{{URL: "https://u", Repo: "o/r", Number: 7}}
+	_, cmd := m.Update(key("v"))
+	if cmd == nil {
+		t.Fatal("v should return a launch command when eligible")
+	}
+}
+
+func TestReviewKeyInertWhenNotInCmux(t *testing.T) {
+	t.Setenv("CMUX_WORKSPACE_ID", "")
+	m := New(stubRunner{}, time.Second, 10, WithReview(enabledReview(t)))
+	m.bucket = pr.AwaitingReview
+	m.reviewing = []pr.PR{{URL: "https://u"}}
+	if _, cmd := m.Update(key("v")); cmd != nil {
+		t.Error("v must be inert outside cmux")
+	}
+}
+
+func TestReviewKeyInertInAuthoredBucket(t *testing.T) {
+	t.Setenv("CMUX_WORKSPACE_ID", "ws1")
+	m := New(stubRunner{}, time.Second, 10, WithReview(enabledReview(t)))
+	m.bucket = pr.Authored
+	m.authored = []pr.PR{{URL: "https://u"}}
+	if _, cmd := m.Update(key("v")); cmd != nil {
+		t.Error("v must be inert in the Authored bucket")
+	}
+}
+
+func TestReviewKeyInertWhenUnconfigured(t *testing.T) {
+	t.Setenv("CMUX_WORKSPACE_ID", "ws1")
+	m := New(stubRunner{}, time.Second, 10) // no WithReview
+	m.bucket = pr.AwaitingReview
+	m.reviewing = []pr.PR{{URL: "https://u"}}
+	if _, cmd := m.Update(key("v")); cmd != nil {
+		t.Error("v must be inert when review is unconfigured")
 	}
 }
