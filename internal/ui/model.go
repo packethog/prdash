@@ -22,6 +22,7 @@ type modalState int
 const (
 	modalNone modalState = iota
 	modalMerge
+	modalClose
 )
 
 // Model is the Bubble Tea model for prdash.
@@ -43,11 +44,13 @@ type Model struct {
 	tickGen     int
 
 	modal          modalState
-	modalPR        pr.PR // PR captured when the merge modal opened (immune to refetch)
+	modalPR        pr.PR // PR captured when a modal opened (immune to refetch)
 	method         pr.MergeMethod
 	merging        bool
+	closing        bool
 	pendingRefresh bool
 	toast          string
+	actioned       map[string]bool // URLs of PRs closed/merged this session, struck until the refetch drops them
 
 	width, height int
 }

@@ -154,11 +154,11 @@ func TestViewMergeModalShowsBlockers(t *testing.T) {
 	m.modal = modalMerge
 	m.modalPR = blocked
 	out := m.View()
-	if !strings.Contains(out, "Merge pull request") {
-		t.Error("modal title missing")
+	if !strings.Contains(out, "can't merge") {
+		t.Error("blocked merge prompt missing")
 	}
 	if !strings.Contains(out, "review not approved") {
-		t.Error("blocked modal should list blockers")
+		t.Error("blocked merge prompt should list blockers")
 	}
 }
 
@@ -279,5 +279,109 @@ func TestViewNeverExceedsHeight(t *testing.T) {
 		if got := strings.Count(m.View(), "\n") + 1; got > h {
 			t.Errorf("height %d: View produced %d lines", h, got)
 		}
+	}
+}
+
+func TestViewRoutesCloseModal(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 80, 24
+	m.conn = connLive
+	m.authored = []pr.PR{{Repo: "o/r", Number: 7, Title: "t"}}
+	m.modal = modalClose
+	m.modalPR = m.authored[0]
+	out := stripANSI(m.View())
+	if !strings.Contains(out, "close this PR?") {
+		t.Error("View should render the inline close prompt")
+	}
+	if !strings.Contains(out, "esc cancel") {
+		t.Error("armed close prompt should show the confirm keys")
+	}
+}
+
+func TestCloseModalShowsBlockerWhenNotLive(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 80, 24
+	m.conn = connOffline
+	m.authored = []pr.PR{{Repo: "o/r", Number: 7, Title: "t"}}
+	m.modal = modalClose
+	m.modalPR = m.authored[0]
+	if !strings.Contains(stripANSI(m.View()), "connection not live") {
+		t.Error("blocked close modal should show the connection blocker")
+	}
+}
+
+func TestInlinePromptSitsUnderSelectedRow(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 90, 24
+	m.conn = connLive
+	m.authored = []pr.PR{
+		{Repo: "o/r", Number: 1, URL: "u1", Title: "first"},
+		{Repo: "o/r", Number: 2, URL: "u2", Title: "second"},
+	}
+	m.cursor = 1
+	m.modal = modalClose
+	m.modalPR = m.authored[1]
+	out := stripANSI(m.View())
+	// list and footer stay visible (inline, not a full-screen overlay)
+	if !strings.Contains(out, "o/r#1") {
+		t.Error("non-selected rows must stay visible")
+	}
+	if !strings.Contains(out, "tab switch") {
+		t.Error("footer must remain visible")
+	}
+	// the prompt sits on the line directly below the selected row (#2)
+	lines := strings.Split(out, "\n")
+	sel := -1
+	for i, ln := range lines {
+		if strings.Contains(ln, "o/r#2") {
+			sel = i
+		}
+	}
+	if sel < 0 || sel+1 >= len(lines) || !strings.Contains(lines[sel+1], "close this PR?") {
+		t.Fatalf("prompt should sit directly below the selected row (sel=%d)", sel)
+	}
+}
+
+func TestActionedRowRendersStruck(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width = 90
+	rows := []pr.PR{{Repo: "o/r", Number: 1, URL: "u1", Title: "t", ReviewDecision: "APPROVED", RollupState: "SUCCESS"}}
+	plain := m.renderTable(rows, -1)
+	m.markActioned("u1")
+	struck := m.renderTable(rows, -1)
+	if plain == struck {
+		t.Error("an actioned (closed/merged) row should render struck-through, not identical")
+	}
+}
+
+func TestInlinePromptFollowsCapturedPRAfterReorder(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 90, 24
+	m.conn = connLive
+	a := pr.PR{Repo: "o/r", Number: 1, URL: "u1", Title: "one"}
+	b := pr.PR{Repo: "o/r", Number: 2, URL: "u2", Title: "two"}
+	m.cursor = 0
+	m.modal = modalClose
+	m.modalPR = a // captured #1
+	// a background refetch reordered the rows; cursor index now points at #2.
+	m.authored = []pr.PR{b, a}
+	lines := strings.Split(stripANSI(m.View()), "\n")
+	sel := -1
+	for i, ln := range lines {
+		if strings.Contains(ln, "o/r#1") { // the captured PR, now at index 1
+			sel = i
+		}
+	}
+	if sel < 0 || sel+1 >= len(lines) || !strings.Contains(lines[sel+1], "close this PR?") {
+		t.Fatal("prompt must follow the captured PR (#1) after a reorder, not the cursor row")
+	}
+}
+
+func TestFooterShowsCloseKey(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 80, 24
+	m.conn = connLive
+	if !strings.Contains(stripANSI(m.View()), "c close") {
+		t.Error("footer should advertise the close key")
 	}
 }

@@ -24,7 +24,9 @@ var (
 	offlineStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	commentedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("14")) // cyan
 
-	modalBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 2)
+	// promptStyle is the accent for the inline confirm line shown under the
+	// selected row when a merge/close is armed.
+	promptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
 )
 
 func reviewStyle(r pr.ReviewState) lipgloss.Style {
@@ -152,12 +154,16 @@ func (m *Model) renderTable(rows []pr.PR, sel int) string {
 
 	style := func(row, col int) lipgloss.Style {
 		st := lipgloss.NewStyle().Padding(0) // no table padding; cells are pre-sized
-		switch {
-		case row == table.HeaderRow:
+		if row == table.HeaderRow {
 			return st.Inherit(dimStyle)
-		case col == 2:
+		}
+		if m.actioned[rows[row].URL] {
+			return st.Strikethrough(true).Inherit(dimStyle) // closed/merged, pending removal
+		}
+		switch col {
+		case 2:
 			return st.Inherit(reviewStyle(pr.Review(rows[row])))
-		case col == 3:
+		case 3:
 			return st.Inherit(ciStyle(pr.CI(rows[row])))
 		}
 		return st
@@ -191,7 +197,11 @@ func (m *Model) renderTable(rows []pr.PR, sel int) string {
 		if m.width > 0 {
 			line = padTo(line, m.width)
 		}
-		selLine = selectedStyle.Render(line)
+		s := selectedStyle
+		if m.actioned[p.URL] {
+			s = s.Strikethrough(true) // closed/merged + selected: struck highlight bar
+		}
+		selLine = s.Render(line)
 	}
 
 	if m.width <= 0 {
@@ -253,10 +263,34 @@ func (m *Model) renderBody() (lines []string, cursorLine int) {
 			lines = append(lines, dimStyle.Render("  (none)"))
 			return
 		}
+		// When a modal is armed, anchor BOTH the highlight and the inline confirm
+		// prompt to the captured PR's row (matched by URL), so a background
+		// refetch that reorders rows can't show the prompt under a different PR
+		// than Enter will act on.
+		sel := selIdx(active, m.cursor)
+		promptRow := -1
+		var prompt []string
+		if active && m.modal != modalNone {
+			if idx := indexByURL(rows, m.modalPR.URL); idx >= 0 {
+				prompt = m.promptLines()
+				promptRow = idx
+				sel = idx
+			}
+		}
 		blockStart := len(lines) // the table's header line lands here
-		lines = append(lines, strings.Split(m.renderTable(rows, selIdx(active, m.cursor)), "\n")...)
+		tableLines := strings.Split(m.renderTable(rows, sel), "\n")
+		for i, ln := range tableLines {
+			lines = append(lines, ln)
+			if len(prompt) > 0 && i == 1+promptRow { // 1 for the table header row
+				lines = append(lines, prompt...)
+			}
+		}
 		if active {
-			cursorLine = blockStart + 1 + m.cursor // +1 for the table header row
+			anchor := m.cursor
+			if promptRow >= 0 {
+				anchor = promptRow
+			}
+			cursorLine = blockStart + 1 + anchor + len(prompt) // keep the row (and prompt) visible
 		}
 	}
 	appendBucket("AUTHORED", m.authored, m.bucket == pr.Authored)
@@ -265,9 +299,38 @@ func (m *Model) renderBody() (lines []string, cursorLine int) {
 	return lines, cursorLine
 }
 
+// promptLines is the inline confirm shown beneath the selected row while a
+// merge or close is armed. Indented with a "↳" so it reads as belonging to the
+// row above it.
+func (m *Model) promptLines() []string {
+	switch m.modal {
+	case modalClose:
+		if blk := m.closeBlockers(); len(blk) > 0 {
+			return []string{promptStyle.Render("   ↳ ✗ can't close: " + strings.Join(blk, ", ") + "   esc")}
+		}
+		return []string{promptStyle.Render("   ↳ close this PR?   ⏎ close   esc cancel")}
+	case modalMerge:
+		if blk := m.mergeBlockers(); len(blk) > 0 {
+			return []string{promptStyle.Render("   ↳ ✗ can't merge: " + strings.Join(blk, ", ") + "   esc")}
+		}
+		return []string{promptStyle.Render("   ↳ merge ‹ " + m.method.String() + " ›   ←/→ method   ⏎ merge   esc cancel")}
+	}
+	return nil
+}
+
 func selIdx(active bool, cursor int) int {
 	if active {
 		return cursor
+	}
+	return -1
+}
+
+// indexByURL returns the index of the PR with the given URL, or -1.
+func indexByURL(rows []pr.PR, url string) int {
+	for i := range rows {
+		if rows[i].URL == url {
+			return i
+		}
 	}
 	return -1
 }
@@ -278,24 +341,6 @@ func (m *Model) clampLine(s string) string {
 		return s
 	}
 	return ansi.Truncate(s, m.width, "")
-}
-
-func (m *Model) renderModal() string {
-	p := m.modalPR // captured when the modal opened
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("Merge pull request") + "\n\n")
-	b.WriteString(p.Ref() + "\n")
-	b.WriteString(truncate(p.Title, 46) + "\n\n")
-	blockers := m.mergeBlockers()
-	if len(blockers) == 0 {
-		fmt.Fprintf(&b, "Review: %s   CI: %s\n", pr.Review(p), pr.CI(p).Symbol())
-		b.WriteString("Method: ‹ " + m.method.String() + " ›   (←/→ to change)\n\n")
-		b.WriteString(dimStyle.Render("enter Merge    esc Cancel"))
-	} else {
-		b.WriteString(offlineStyle.Render("✗ Blocked: "+strings.Join(blockers, "; ")) + "\n\n")
-		b.WriteString(dimStyle.Render("esc Close"))
-	}
-	return modalBox.Render(b.String())
 }
 
 // View renders the whole UI. It assembles all lines and joins them WITHOUT a
@@ -324,7 +369,7 @@ func (m *Model) View() string {
 	if m.toast != "" {
 		status += "   " + m.toast
 	}
-	keys := dimStyle.Render("↑↓ move  tab switch  r refresh  m merge  o open  q quit") + hint
+	keys := dimStyle.Render("↑↓ move  tab switch  r refresh  m merge  c close  o open  q quit") + hint
 
 	all := []string{titleStyle.Render("prdash"), ""}
 	all = append(all, visible...)
@@ -335,14 +380,5 @@ func (m *Model) View() string {
 	if m.height > 0 && len(all) > m.height {
 		all = all[:m.height] // tiny-height guard: never exceed the terminal height
 	}
-	base := strings.Join(all, "\n")
-
-	if m.modal != modalMerge {
-		return base
-	}
-	modal := m.renderModal()
-	if m.width > 0 && m.height > 0 {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
-	}
-	return base + "\n\n" + modal
+	return strings.Join(all, "\n")
 }

@@ -30,6 +30,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mergeDoneMsg:
 		m.merging = false
 		m.toast = "Merged " + msg.p.Ref()
+		m.markActioned(msg.p.URL)
 		if !m.fetching {
 			m.fetching = true
 			m.tickGen++
@@ -40,6 +41,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mergeFailedMsg:
 		m.merging = false
 		m.toast = "Merge failed: " + msg.err.Error()
+		return m, nil
+	case closeDoneMsg:
+		m.closing = false
+		m.toast = "Closed " + msg.p.Ref()
+		m.markActioned(msg.p.URL)
+		if !m.fetching {
+			m.fetching = true
+			m.tickGen++
+			return m, fetchCmd(m.runner, m.limit)
+		}
+		m.pendingRefresh = true
+		return m, nil
+	case closeFailedMsg:
+		m.closing = false
+		m.toast = "Close failed: " + msg.err.Error()
 		return m, nil
 	case openedMsg:
 		if msg.err != nil {
@@ -52,6 +68,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// markActioned flags a PR (by URL) as closed/merged this session so its row is
+// struck through until a refetch drops it from the list.
+func (m *Model) markActioned(url string) {
+	if m.actioned == nil {
+		m.actioned = map[string]bool{}
+	}
+	m.actioned[url] = true
+}
+
+// pruneActioned drops strike-through marks for PRs that the latest fetch no
+// longer lists (they have fallen off the page), keeping marks for any that
+// still appear (e.g. while the search index catches up).
+func (m *Model) pruneActioned() {
+	if len(m.actioned) == 0 {
+		return
+	}
+	kept := map[string]bool{}
+	for _, p := range m.authored {
+		if m.actioned[p.URL] {
+			kept[p.URL] = true
+		}
+	}
+	m.actioned = kept
+}
+
 func (m *Model) onFetched(msg prsFetchedMsg) (tea.Model, tea.Cmd) {
 	m.authored = msg.res.Authored
 	m.reviewing = msg.res.Reviewing
@@ -61,6 +102,12 @@ func (m *Model) onFetched(msg prsFetchedMsg) (tea.Model, tea.Cmd) {
 	m.fetching = false
 	m.backoff.RecordSuccess()
 	m.clampCursor()
+	// If a modal was armed on a PR the refetch dropped (closed/merged
+	// elsewhere), dismiss the now-orphaned inline prompt.
+	if m.modal != modalNone && indexByURL(m.authored, m.modalPR.URL) < 0 {
+		m.modal = modalNone
+	}
+	m.pruneActioned()
 	if m.pendingRefresh {
 		m.pendingRefresh = false
 		m.fetching = true
@@ -107,7 +154,7 @@ func (m *Model) clampCursor() {
 }
 
 func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.modal == modalMerge {
+	if m.modal != modalNone {
 		return m.onModalKey(msg)
 	}
 	switch msg.String() {
@@ -142,6 +189,13 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.method = pr.MethodSquash
 			}
 		}
+	case "c":
+		if m.bucket == pr.Authored {
+			if p, ok := m.selected(); ok {
+				m.modal = modalClose
+				m.modalPR = p
+			}
+		}
 	case "o":
 		if p, ok := m.selected(); ok {
 			return m, openCmd(m.runner, p)
@@ -158,7 +212,33 @@ func (m *Model) mergeBlockers() []string {
 	return b
 }
 
+// closeBlockers returns the reasons the captured PR cannot be closed. Closing
+// your own open PR only requires a live connection (close is reversible).
+func (m *Model) closeBlockers() []string {
+	if m.conn != connLive {
+		return []string{"connection not live — refresh first"}
+	}
+	return nil
+}
+
+func (m *Model) onCloseModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.modal = modalNone
+	case "enter":
+		if len(m.closeBlockers()) == 0 && !m.closing {
+			m.closing = true
+			m.modal = modalNone
+			return m, closeCmd(m.runner, m.modalPR)
+		}
+	}
+	return m, nil
+}
+
 func (m *Model) onModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modal == modalClose {
+		return m.onCloseModalKey(msg)
+	}
 	switch msg.String() {
 	case "esc":
 		m.modal = modalNone

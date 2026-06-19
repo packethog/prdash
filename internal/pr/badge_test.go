@@ -28,7 +28,9 @@ func TestReviewCommented(t *testing.T) {
 		want ReviewState
 	}{
 		{"commented only", PR{LatestReviews: []string{"COMMENTED"}}, ReviewCommented},
-		{"approved-but-insufficient shows commented", PR{ReviewDecision: "", LatestReviews: []string{"APPROVED"}}, ReviewCommented},
+		{"approved review (null decision) shows approved", PR{ReviewDecision: "", LatestReviews: []string{"APPROVED"}}, ReviewApproved},
+		{"approved with comments shows approved", PR{ReviewDecision: "", LatestReviews: []string{"APPROVED", "COMMENTED"}}, ReviewApproved},
+		{"changes-requested wins over an approval", PR{ReviewDecision: "", LatestReviews: []string{"APPROVED", "CHANGES_REQUESTED"}}, ReviewChangesRequested},
 		{"changes from reviews when decision empty", PR{ReviewDecision: "", LatestReviews: []string{"CHANGES_REQUESTED"}}, ReviewChangesRequested},
 		{"decision approved wins over reviews", PR{ReviewDecision: "APPROVED", LatestReviews: []string{"COMMENTED"}}, ReviewApproved},
 		{"decision changes wins", PR{ReviewDecision: "CHANGES_REQUESTED", LatestReviews: []string{"COMMENTED"}}, ReviewChangesRequested},

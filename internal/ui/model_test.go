@@ -45,3 +45,9 @@ func TestRowsAndSelected(t *testing.T) {
 		t.Error("out-of-range cursor should not select")
 	}
 }
+
+func TestModalCloseIsDistinctState(t *testing.T) {
+	if modalClose == modalMerge || modalClose == modalNone {
+		t.Error("modalClose must be a distinct modal state")
+	}
+}
