@@ -154,11 +154,11 @@ func TestViewMergeModalShowsBlockers(t *testing.T) {
 	m.modal = modalMerge
 	m.modalPR = blocked
 	out := m.View()
-	if !strings.Contains(out, "Merge pull request") {
-		t.Error("modal title missing")
+	if !strings.Contains(out, "can't merge") {
+		t.Error("blocked merge prompt missing")
 	}
 	if !strings.Contains(out, "review not approved") {
-		t.Error("blocked modal should list blockers")
+		t.Error("blocked merge prompt should list blockers")
 	}
 }
 
@@ -290,11 +290,11 @@ func TestViewRoutesCloseModal(t *testing.T) {
 	m.modal = modalClose
 	m.modalPR = m.authored[0]
 	out := stripANSI(m.View())
-	if !strings.Contains(out, "Close pull request") {
-		t.Error("View should render the close modal")
+	if !strings.Contains(out, "close this PR?") {
+		t.Error("View should render the inline close prompt")
 	}
-	if !strings.Contains(out, "enter Close") {
-		t.Error("armed close modal should show the confirm line")
+	if !strings.Contains(out, "esc cancel") {
+		t.Error("armed close prompt should show the confirm keys")
 	}
 }
 
@@ -307,6 +307,38 @@ func TestCloseModalShowsBlockerWhenNotLive(t *testing.T) {
 	m.modalPR = m.authored[0]
 	if !strings.Contains(stripANSI(m.View()), "connection not live") {
 		t.Error("blocked close modal should show the connection blocker")
+	}
+}
+
+func TestInlinePromptSitsUnderSelectedRow(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 90, 24
+	m.conn = connLive
+	m.authored = []pr.PR{
+		{Repo: "o/r", Number: 1, Title: "first"},
+		{Repo: "o/r", Number: 2, Title: "second"},
+	}
+	m.cursor = 1
+	m.modal = modalClose
+	m.modalPR = m.authored[1]
+	out := stripANSI(m.View())
+	// list and footer stay visible (inline, not a full-screen overlay)
+	if !strings.Contains(out, "o/r#1") {
+		t.Error("non-selected rows must stay visible")
+	}
+	if !strings.Contains(out, "tab switch") {
+		t.Error("footer must remain visible")
+	}
+	// the prompt sits on the line directly below the selected row (#2)
+	lines := strings.Split(out, "\n")
+	sel := -1
+	for i, ln := range lines {
+		if strings.Contains(ln, "o/r#2") {
+			sel = i
+		}
+	}
+	if sel < 0 || sel+1 >= len(lines) || !strings.Contains(lines[sel+1], "close this PR?") {
+		t.Fatalf("prompt should sit directly below the selected row (sel=%d)", sel)
 	}
 }
 

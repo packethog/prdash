@@ -24,7 +24,9 @@ var (
 	offlineStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	commentedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("14")) // cyan
 
-	modalBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 2)
+	// promptStyle is the accent for the inline confirm line shown under the
+	// selected row when a merge/close is armed.
+	promptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
 )
 
 func reviewStyle(r pr.ReviewState) lipgloss.Style {
@@ -254,15 +256,47 @@ func (m *Model) renderBody() (lines []string, cursorLine int) {
 			return
 		}
 		blockStart := len(lines) // the table's header line lands here
-		lines = append(lines, strings.Split(m.renderTable(rows, selIdx(active, m.cursor)), "\n")...)
+		tableLines := strings.Split(m.renderTable(rows, selIdx(active, m.cursor)), "\n")
+		// The active bucket's selected row carries an inline confirm prompt
+		// (close/merge) directly beneath it when a modal is armed.
+		var prompt []string
+		if active && m.modal != modalNone {
+			prompt = m.promptLines()
+		}
+		for i, ln := range tableLines {
+			lines = append(lines, ln)
+			if len(prompt) > 0 && i == 1+m.cursor { // 1 for the table header row
+				lines = append(lines, prompt...)
+			}
+		}
 		if active {
-			cursorLine = blockStart + 1 + m.cursor // +1 for the table header row
+			rowLine := blockStart + 1 + m.cursor // +1 for the table header row
+			cursorLine = rowLine + len(prompt)   // keep the row AND its prompt on screen
 		}
 	}
 	appendBucket("AUTHORED", m.authored, m.bucket == pr.Authored)
 	lines = append(lines, "") // separator between buckets
 	appendBucket("AWAITING MY REVIEW", m.reviewing, m.bucket == pr.AwaitingReview)
 	return lines, cursorLine
+}
+
+// promptLines is the inline confirm shown beneath the selected row while a
+// merge or close is armed. Indented with a "↳" so it reads as belonging to the
+// row above it.
+func (m *Model) promptLines() []string {
+	switch m.modal {
+	case modalClose:
+		if blk := m.closeBlockers(); len(blk) > 0 {
+			return []string{promptStyle.Render("   ↳ ✗ can't close: " + strings.Join(blk, ", ") + "   esc")}
+		}
+		return []string{promptStyle.Render("   ↳ close this PR?   ⏎ close   esc cancel")}
+	case modalMerge:
+		if blk := m.mergeBlockers(); len(blk) > 0 {
+			return []string{promptStyle.Render("   ↳ ✗ can't merge: " + strings.Join(blk, ", ") + "   esc")}
+		}
+		return []string{promptStyle.Render("   ↳ merge ‹ " + m.method.String() + " ›   ←/→ method   ⏎ merge   esc cancel")}
+	}
+	return nil
 }
 
 func selIdx(active bool, cursor int) int {
@@ -278,40 +312,6 @@ func (m *Model) clampLine(s string) string {
 		return s
 	}
 	return ansi.Truncate(s, m.width, "")
-}
-
-func (m *Model) renderModal() string {
-	p := m.modalPR // captured when the modal opened
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("Merge pull request") + "\n\n")
-	b.WriteString(p.Ref() + "\n")
-	b.WriteString(truncate(p.Title, 46) + "\n\n")
-	blockers := m.mergeBlockers()
-	if len(blockers) == 0 {
-		fmt.Fprintf(&b, "Review: %s   CI: %s\n", pr.Review(p), pr.CI(p).Symbol())
-		b.WriteString("Method: ‹ " + m.method.String() + " ›   (←/→ to change)\n\n")
-		b.WriteString(dimStyle.Render("enter Merge    esc Cancel"))
-	} else {
-		b.WriteString(offlineStyle.Render("✗ Blocked: "+strings.Join(blockers, "; ")) + "\n\n")
-		b.WriteString(dimStyle.Render("esc Close"))
-	}
-	return modalBox.Render(b.String())
-}
-
-func (m *Model) renderCloseModal() string {
-	p := m.modalPR // captured when the modal opened
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("Close pull request") + "\n\n")
-	b.WriteString(p.Ref() + "\n")
-	b.WriteString(truncate(p.Title, 46) + "\n\n")
-	if blockers := m.closeBlockers(); len(blockers) == 0 {
-		b.WriteString("This closes the PR (you can reopen it on GitHub).\n\n")
-		b.WriteString(dimStyle.Render("enter Close    esc Cancel"))
-	} else {
-		b.WriteString(offlineStyle.Render("✗ Blocked: "+strings.Join(blockers, "; ")) + "\n\n")
-		b.WriteString(dimStyle.Render("esc Close"))
-	}
-	return modalBox.Render(b.String())
 }
 
 // View renders the whole UI. It assembles all lines and joins them WITHOUT a
@@ -351,17 +351,5 @@ func (m *Model) View() string {
 	if m.height > 0 && len(all) > m.height {
 		all = all[:m.height] // tiny-height guard: never exceed the terminal height
 	}
-	base := strings.Join(all, "\n")
-
-	if m.modal == modalNone {
-		return base
-	}
-	modal := m.renderModal()
-	if m.modal == modalClose {
-		modal = m.renderCloseModal()
-	}
-	if m.width > 0 && m.height > 0 {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
-	}
-	return base + "\n\n" + modal
+	return strings.Join(all, "\n")
 }
