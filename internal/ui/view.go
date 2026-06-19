@@ -255,23 +255,34 @@ func (m *Model) renderBody() (lines []string, cursorLine int) {
 			lines = append(lines, dimStyle.Render("  (none)"))
 			return
 		}
-		blockStart := len(lines) // the table's header line lands here
-		tableLines := strings.Split(m.renderTable(rows, selIdx(active, m.cursor)), "\n")
-		// The active bucket's selected row carries an inline confirm prompt
-		// (close/merge) directly beneath it when a modal is armed.
+		// When a modal is armed, anchor BOTH the highlight and the inline confirm
+		// prompt to the captured PR's row (matched by URL), so a background
+		// refetch that reorders rows can't show the prompt under a different PR
+		// than Enter will act on.
+		sel := selIdx(active, m.cursor)
+		promptRow := -1
 		var prompt []string
 		if active && m.modal != modalNone {
-			prompt = m.promptLines()
+			if idx := indexByURL(rows, m.modalPR.URL); idx >= 0 {
+				prompt = m.promptLines()
+				promptRow = idx
+				sel = idx
+			}
 		}
+		blockStart := len(lines) // the table's header line lands here
+		tableLines := strings.Split(m.renderTable(rows, sel), "\n")
 		for i, ln := range tableLines {
 			lines = append(lines, ln)
-			if len(prompt) > 0 && i == 1+m.cursor { // 1 for the table header row
+			if len(prompt) > 0 && i == 1+promptRow { // 1 for the table header row
 				lines = append(lines, prompt...)
 			}
 		}
 		if active {
-			rowLine := blockStart + 1 + m.cursor // +1 for the table header row
-			cursorLine = rowLine + len(prompt)   // keep the row AND its prompt on screen
+			anchor := m.cursor
+			if promptRow >= 0 {
+				anchor = promptRow
+			}
+			cursorLine = blockStart + 1 + anchor + len(prompt) // keep the row (and prompt) visible
 		}
 	}
 	appendBucket("AUTHORED", m.authored, m.bucket == pr.Authored)
@@ -302,6 +313,16 @@ func (m *Model) promptLines() []string {
 func selIdx(active bool, cursor int) int {
 	if active {
 		return cursor
+	}
+	return -1
+}
+
+// indexByURL returns the index of the PR with the given URL, or -1.
+func indexByURL(rows []pr.PR, url string) int {
+	for i := range rows {
+		if rows[i].URL == url {
+			return i
+		}
 	}
 	return -1
 }

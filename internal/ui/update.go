@@ -75,6 +75,11 @@ func (m *Model) onFetched(msg prsFetchedMsg) (tea.Model, tea.Cmd) {
 	m.fetching = false
 	m.backoff.RecordSuccess()
 	m.clampCursor()
+	// If a modal was armed on a PR the refetch dropped (closed/merged
+	// elsewhere), dismiss the now-orphaned inline prompt.
+	if m.modal != modalNone && indexByURL(m.authored, m.modalPR.URL) < 0 {
+		m.modal = modalNone
+	}
 	if m.pendingRefresh {
 		m.pendingRefresh = false
 		m.fetching = true

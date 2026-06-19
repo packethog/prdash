@@ -315,8 +315,8 @@ func TestInlinePromptSitsUnderSelectedRow(t *testing.T) {
 	m.width, m.height = 90, 24
 	m.conn = connLive
 	m.authored = []pr.PR{
-		{Repo: "o/r", Number: 1, Title: "first"},
-		{Repo: "o/r", Number: 2, Title: "second"},
+		{Repo: "o/r", Number: 1, URL: "u1", Title: "first"},
+		{Repo: "o/r", Number: 2, URL: "u2", Title: "second"},
 	}
 	m.cursor = 1
 	m.modal = modalClose
@@ -339,6 +339,29 @@ func TestInlinePromptSitsUnderSelectedRow(t *testing.T) {
 	}
 	if sel < 0 || sel+1 >= len(lines) || !strings.Contains(lines[sel+1], "close this PR?") {
 		t.Fatalf("prompt should sit directly below the selected row (sel=%d)", sel)
+	}
+}
+
+func TestInlinePromptFollowsCapturedPRAfterReorder(t *testing.T) {
+	m := New(stubRunner{}, 45*time.Second, 50)
+	m.width, m.height = 90, 24
+	m.conn = connLive
+	a := pr.PR{Repo: "o/r", Number: 1, URL: "u1", Title: "one"}
+	b := pr.PR{Repo: "o/r", Number: 2, URL: "u2", Title: "two"}
+	m.cursor = 0
+	m.modal = modalClose
+	m.modalPR = a // captured #1
+	// a background refetch reordered the rows; cursor index now points at #2.
+	m.authored = []pr.PR{b, a}
+	lines := strings.Split(stripANSI(m.View()), "\n")
+	sel := -1
+	for i, ln := range lines {
+		if strings.Contains(ln, "o/r#1") { // the captured PR, now at index 1
+			sel = i
+		}
+	}
+	if sel < 0 || sel+1 >= len(lines) || !strings.Contains(lines[sel+1], "close this PR?") {
+		t.Fatal("prompt must follow the captured PR (#1) after a reorder, not the cursor row")
 	}
 }
 

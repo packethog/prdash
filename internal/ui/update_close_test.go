@@ -7,11 +7,27 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/packethog/prdash/internal/gh"
 	"github.com/packethog/prdash/internal/pr"
 )
 
 func authoredPR() pr.PR {
 	return pr.PR{Repo: "o/r", Number: 7, URL: "u", Title: "t"}
+}
+
+func TestModalDismissedWhenCapturedPRVanishes(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10)
+	m.conn = connLive
+	m.authored = []pr.PR{authoredPR()}
+	m.Update(key("c"))
+	if m.modal != modalClose {
+		t.Fatal("c should arm the close modal")
+	}
+	// a refetch no longer lists the captured PR (closed/merged elsewhere)
+	m.Update(prsFetchedMsg{res: gh.FetchResult{Authored: []pr.PR{{Repo: "o/r", Number: 9, URL: "other"}}}})
+	if m.modal != modalNone {
+		t.Error("modal should dismiss when the captured PR is no longer listed")
+	}
 }
 
 func TestCKeyOpensCloseModalOnAuthored(t *testing.T) {
