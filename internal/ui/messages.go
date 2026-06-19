@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/gh"
 	"github.com/packethog/prdash/internal/pr"
 )
@@ -28,6 +29,10 @@ type closeFailedMsg struct {
 	err error
 }
 type openedMsg struct {
+	p   pr.PR
+	err error
+}
+type reviewLaunchedMsg struct {
 	p   pr.PR
 	err error
 }
@@ -76,6 +81,18 @@ func openCmd(r gh.Runner, p pr.PR) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 		return openedMsg{p: p, err: gh.Open(ctx, r, p)}
+	}
+}
+
+func reviewCmd(cmux gh.Runner, rv config.Review, p pr.PR) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		prompt, err := rv.Render(p)
+		if err != nil {
+			return reviewLaunchedMsg{p: p, err: err}
+		}
+		return reviewLaunchedMsg{p: p, err: gh.StartReview(ctx, cmux, rv.Provider, prompt)}
 	}
 }
 

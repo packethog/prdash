@@ -62,6 +62,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toast = "Open failed: " + msg.err.Error()
 		}
 		return m, nil
+	case reviewLaunchedMsg:
+		if msg.err != nil {
+			m.toast = "Review failed: " + msg.err.Error()
+		} else {
+			m.toast = "Review started for " + msg.p.Ref()
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.onKey(msg)
 	}

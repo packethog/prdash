@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/gh"
 	"github.com/packethog/prdash/internal/pr"
 )
@@ -52,13 +53,22 @@ type Model struct {
 	toast          string
 	actioned       map[string]bool // URLs of PRs closed/merged this session, struck until the refetch drops them
 
+	review config.Review // review-launcher config (disabled when unset)
+	cmux   gh.Runner     // runner targeting the cmux binary
+
 	width, height int
 }
 
+// Option configures a Model at construction.
+type Option func(*Model)
+
+// WithReview sets the review-launcher config.
+func WithReview(r config.Review) Option { return func(m *Model) { m.review = r } }
+
 // New builds a Model. interval is the normal auto-refresh cadence; limit caps
 // PRs fetched per bucket.
-func New(r gh.Runner, interval time.Duration, limit int) *Model {
-	return &Model{
+func New(r gh.Runner, interval time.Duration, limit int, opts ...Option) *Model {
+	m := &Model{
 		runner:   r,
 		limit:    limit,
 		backoff:  pr.NewBackoff(interval),
@@ -67,7 +77,12 @@ func New(r gh.Runner, interval time.Duration, limit int) *Model {
 		conn:     connOffline, // until the first successful fetch
 		fetching: true,
 		method:   pr.MethodSquash,
+		cmux:     gh.NewCmuxRunner(),
 	}
+	for _, o := range opts {
+		o(m)
+	}
+	return m
 }
 
 // Init kicks off the first fetch and starts the 1s UI heartbeat.

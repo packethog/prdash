@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/pr"
 )
 
@@ -57,5 +58,29 @@ func TestCloseCmd(t *testing.T) {
 	}
 	if _, ok := closeCmd(stubRunner{err: errors.New("x")}, pr.PR{URL: "u"})().(closeFailedMsg); !ok {
 		t.Fatal("expected closeFailedMsg on error")
+	}
+}
+
+func TestReviewCmdLaunches(t *testing.T) {
+	rv, err := config.Parse("claude", "review {{.URL}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := reviewCmd(stubRunner{out: []byte("surface:4")}, rv, pr.PR{URL: "https://u"})()
+	r, ok := msg.(reviewLaunchedMsg)
+	if !ok || r.err != nil {
+		t.Fatalf("msg = %#v", msg)
+	}
+}
+
+func TestReviewCmdRenderErrorSurfaces(t *testing.T) {
+	rv, err := config.Parse("claude", "{{.Missing}}") // unknown field -> render error
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := reviewCmd(stubRunner{}, rv, pr.PR{URL: "https://u"})()
+	r, ok := msg.(reviewLaunchedMsg)
+	if !ok || r.err == nil {
+		t.Fatalf("expected render error, msg = %#v", msg)
 	}
 }
