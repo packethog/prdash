@@ -1,11 +1,18 @@
 package pr
 
+import "slices"
+
 // Review maps a PR to its displayed review state. Precedence: draft, then the
 // authoritative reviewDecision, then per-reviewer review states (which cover
 // repos with no required-reviewer rule, where reviewDecision is null even after
 // an approval): change-requests, then approvals, then plain comments, else
 // Pending. An approval outranks a comment, so an "approved with comments" PR
 // shows Approved rather than Commented.
+//
+// Approvals and change-requests are read from latestOpinionatedReviews as well
+// as latestReviews: GitHub drops a reviewer from latestReviews once approving
+// clears their review request, so an approved-but-unrequired PR would otherwise
+// show as Pending.
 func Review(p PR) ReviewState {
 	if p.IsDraft {
 		return ReviewDraft
@@ -13,25 +20,23 @@ func Review(p PR) ReviewState {
 	if p.ReviewDecision == "APPROVED" {
 		return ReviewApproved
 	}
-	if p.ReviewDecision == "CHANGES_REQUESTED" || hasReviewState(p, "CHANGES_REQUESTED") {
+	if p.ReviewDecision == "CHANGES_REQUESTED" || hasOpinion(p, "CHANGES_REQUESTED") {
 		return ReviewChangesRequested
 	}
-	if hasReviewState(p, "APPROVED") {
+	if hasOpinion(p, "APPROVED") {
 		return ReviewApproved
 	}
-	if hasReviewState(p, "COMMENTED") {
+	if slices.Contains(p.LatestReviews, "COMMENTED") {
 		return ReviewCommented
 	}
 	return ReviewPending
 }
 
-func hasReviewState(p PR, state string) bool {
-	for _, s := range p.LatestReviews {
-		if s == state {
-			return true
-		}
-	}
-	return false
+// hasOpinion reports whether any latest opinionated review or latest review has
+// the given state. Both are consulted because either set can carry the approval
+// or change-request for a given PR.
+func hasOpinion(p PR, state string) bool {
+	return slices.Contains(p.OpinionatedReviews, state) || slices.Contains(p.LatestReviews, state)
 }
 
 // CI maps a PR's status-check rollup to its displayed CI state. Anything that

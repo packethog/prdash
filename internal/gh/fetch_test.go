@@ -109,3 +109,33 @@ func TestFetchDecodesLatestReviews(t *testing.T) {
 		t.Errorf("authored[0].LatestReviews = %v, want empty", res.Authored[0].LatestReviews)
 	}
 }
+
+// TestFetchDecodesOpinionatedReviews covers the latestOpinionatedReviews wiring:
+// an approval that GitHub surfaces only there (latestReviews empty) must reach
+// the PR so the badge can read it.
+func TestFetchDecodesOpinionatedReviews(t *testing.T) {
+	body := `{"data":{"authored":{"nodes":[]},"reviewing":{"nodes":[
+		{"number":112,"url":"https://github.com/o/r/pull/112","repository":{"nameWithOwner":"o/r"},
+		 "reviewDecision":null,
+		 "latestReviews":{"nodes":[]},
+		 "latestOpinionatedReviews":{"nodes":[{"state":"APPROVED"}]}}
+	]}}}`
+	f := &fakeRunner{out: []byte(body)}
+	res, err := Fetch(context.Background(), f, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Reviewing) != 1 {
+		t.Fatalf("reviewing len = %d, want 1", len(res.Reviewing))
+	}
+	got := res.Reviewing[0]
+	if len(got.LatestReviews) != 0 {
+		t.Errorf("LatestReviews = %v, want empty", got.LatestReviews)
+	}
+	if len(got.OpinionatedReviews) != 1 || got.OpinionatedReviews[0] != "APPROVED" {
+		t.Errorf("OpinionatedReviews = %v, want [APPROVED]", got.OpinionatedReviews)
+	}
+	if state := pr.Review(got); state != pr.ReviewApproved {
+		t.Errorf("Review() = %v, want Approved", state)
+	}
+}
