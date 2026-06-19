@@ -22,6 +22,11 @@ type mergeFailedMsg struct {
 	p   pr.PR
 	err error
 }
+type closeDoneMsg struct{ p pr.PR }
+type closeFailedMsg struct {
+	p   pr.PR
+	err error
+}
 type openedMsg struct {
 	p   pr.PR
 	err error
@@ -52,6 +57,17 @@ func mergeCmd(r gh.Runner, p pr.PR, m pr.MergeMethod) tea.Cmd {
 			return mergeFailedMsg{p: p, err: err}
 		}
 		return mergeDoneMsg{p: p}
+	}
+}
+
+func closeCmd(r gh.Runner, p pr.PR) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), mergeTimeout)
+		defer cancel()
+		if err := gh.Close(ctx, r, p); err != nil {
+			return closeFailedMsg{p: p, err: err}
+		}
+		return closeDoneMsg{p: p}
 	}
 }
 

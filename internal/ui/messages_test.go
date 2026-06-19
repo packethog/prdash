@@ -49,3 +49,12 @@ func TestOpenCmd(t *testing.T) {
 		t.Fatalf("expected openedMsg, got %T", msg)
 	}
 }
+
+func TestCloseCmd(t *testing.T) {
+	if _, ok := closeCmd(stubRunner{}, pr.PR{URL: "u"})().(closeDoneMsg); !ok {
+		t.Fatal("expected closeDoneMsg on success")
+	}
+	if _, ok := closeCmd(stubRunner{err: errors.New("x")}, pr.PR{URL: "u"})().(closeFailedMsg); !ok {
+		t.Fatal("expected closeFailedMsg on error")
+	}
+}
