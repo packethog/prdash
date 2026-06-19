@@ -1,9 +1,11 @@
 package pr
 
 // Review maps a PR to its displayed review state. Precedence: draft, then the
-// authoritative reviewDecision, then change-requests seen in the per-reviewer
-// reviews (covers repos with no required-reviewer rule where reviewDecision is
-// null), then any substantive review (Commented), else Pending.
+// authoritative reviewDecision, then per-reviewer review states (which cover
+// repos with no required-reviewer rule, where reviewDecision is null even after
+// an approval): change-requests, then approvals, then plain comments, else
+// Pending. An approval outranks a comment, so an "approved with comments" PR
+// shows Approved rather than Commented.
 func Review(p PR) ReviewState {
 	if p.IsDraft {
 		return ReviewDraft
@@ -14,7 +16,10 @@ func Review(p PR) ReviewState {
 	if p.ReviewDecision == "CHANGES_REQUESTED" || hasReviewState(p, "CHANGES_REQUESTED") {
 		return ReviewChangesRequested
 	}
-	if hasSubstantiveReview(p) {
+	if hasReviewState(p, "APPROVED") {
+		return ReviewApproved
+	}
+	if hasReviewState(p, "COMMENTED") {
 		return ReviewCommented
 	}
 	return ReviewPending
@@ -23,18 +28,6 @@ func Review(p PR) ReviewState {
 func hasReviewState(p PR, state string) bool {
 	for _, s := range p.LatestReviews {
 		if s == state {
-			return true
-		}
-	}
-	return false
-}
-
-// hasSubstantiveReview reports whether any reviewer left a comment, approval, or
-// change request — ignoring PENDING (unsubmitted) and DISMISSED reviews.
-func hasSubstantiveReview(p PR) bool {
-	for _, s := range p.LatestReviews {
-		switch s {
-		case "COMMENTED", "APPROVED", "CHANGES_REQUESTED":
 			return true
 		}
 	}
