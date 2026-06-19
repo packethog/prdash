@@ -51,6 +51,7 @@ func TestMergePropagatesError(t *testing.T) {
 }
 
 func TestOpenBuildsArgs(t *testing.T) {
+	t.Setenv("CMUX_WORKSPACE_ID", "") // force the gh path (not the cmux pane path)
 	f := &fakeRunner{}
 	p := pr.PR{URL: "https://github.com/o/r/pull/9"}
 	if err := Open(context.Background(), f, p); err != nil {
@@ -61,6 +62,17 @@ func TestOpenBuildsArgs(t *testing.T) {
 		if !strings.Contains(args, want) {
 			t.Errorf("args %q missing %q", args, want)
 		}
+	}
+}
+
+func TestOpenArgs(t *testing.T) {
+	bin, args := openArgs(false, "u")
+	if bin != "gh" || strings.Join(args, " ") != "pr view u --web" {
+		t.Errorf("non-cmux openArgs = %s %v", bin, args)
+	}
+	bin, args = openArgs(true, "u")
+	if bin != "cmux" || strings.Join(args, " ") != "new-pane --type browser --direction down --url u" {
+		t.Errorf("cmux openArgs = %s %v", bin, args)
 	}
 }
 

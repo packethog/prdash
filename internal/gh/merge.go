@@ -2,6 +2,8 @@ package gh
 
 import (
 	"context"
+	"os"
+	"os/exec"
 
 	"github.com/packethog/prdash/internal/pr"
 )
@@ -27,8 +29,29 @@ func Merge(ctx context.Context, r Runner, p pr.PR, m pr.MergeMethod, deleteBranc
 	return err
 }
 
-// Open opens the PR in a browser via `gh pr view --web`.
+// openArgs is the command used to open a PR URL in a browser. Inside cmux it
+// docks an embedded browser pane BELOW the terminal; otherwise it uses gh
+// (which opens the default browser).
+func openArgs(inCmux bool, url string) (bin string, args []string) {
+	if inCmux {
+		return "cmux", []string{"new-pane", "--type", "browser", "--direction", "down", "--url", url}
+	}
+	return "gh", []string{"pr", "view", url, "--web"}
+}
+
+// Open opens the PR in a browser. When running inside cmux (CMUX_WORKSPACE_ID is
+// set) it opens an embedded browser pane below the terminal; if that fails (e.g.
+// cmux is not on PATH) it falls back to `gh pr view --web`.
 func Open(ctx context.Context, r Runner, p pr.PR) error {
+	if os.Getenv("CMUX_WORKSPACE_ID") != "" {
+		bin, args := openArgs(true, p.URL)
+		if err := exec.CommandContext(ctx, bin, args...).Run(); err == nil {
+			return nil
+		} else if ctx.Err() != nil {
+			return ctx.Err() // cancelled/timed out: don't spawn the fallback
+		}
+		// otherwise fall through to gh on cmux failure (e.g. not on PATH)
+	}
 	_, err := r.Run(ctx, "pr", "view", p.URL, "--web")
 	return err
 }

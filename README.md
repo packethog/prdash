@@ -81,6 +81,9 @@ approved + CI green), `esc` cancels.
   connection.
 - Network drops are handled gracefully: the last-known list stays on screen, the
   footer shows `Live`/`Stale`/`Offline`, and failed fetches retry with backoff.
+- Opening a PR (`o`): inside [cmux](https://github.com/manaflow-ai/cmux) it docks
+  a browser pane *below* the terminal (`cmux new-pane --direction down`); elsewhere
+  it uses `gh pr view --web`.
 - Per-workspace PR views are intentionally **not** included — use cmux's native
   `sidebar.showPullRequests` for that. See `docs/superpowers/specs/`.
 - The list scrolls to keep the selected PR visible on short terminals; relative
