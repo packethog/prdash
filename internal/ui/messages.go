@@ -92,7 +92,7 @@ func reviewCmd(cmux gh.Runner, rv config.Review, p pr.PR) tea.Cmd {
 		if err != nil {
 			return reviewLaunchedMsg{p: p, err: err}
 		}
-		return reviewLaunchedMsg{p: p, err: gh.StartReview(ctx, cmux, rv.Provider, prompt)}
+		return reviewLaunchedMsg{p: p, err: gh.StartReview(ctx, cmux, rv.Provider, rv.Args, prompt)}
 	}
 }
 

@@ -21,14 +21,16 @@ import (
 // disabled feature (Enabled reports false).
 type Review struct {
 	Provider string
+	Args     []string // extra flags passed to the provider before the prompt (e.g. --permission-mode auto)
 	Prompt   string
 	tmpl     *template.Template
 }
 
 type fileSchema struct {
 	Review struct {
-		Provider string `toml:"provider"`
-		Prompt   string `toml:"prompt"`
+		Provider string   `toml:"provider"`
+		Args     []string `toml:"args"`
+		Prompt   string   `toml:"prompt"`
 	} `toml:"review"`
 }
 
@@ -89,6 +91,7 @@ func Load() (Review, error) {
 	if err != nil {
 		return Review{}, fmt.Errorf("config: %w", err)
 	}
+	r.Args = f.Review.Args
 	return r, nil
 }
 

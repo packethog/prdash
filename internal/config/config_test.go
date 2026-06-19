@@ -156,3 +156,23 @@ func TestLoadMalformedTOMLIsDisabledWithError(t *testing.T) {
 		t.Error("malformed TOML should be disabled")
 	}
 }
+
+func TestLoadReadsArgs(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	pdir := filepath.Join(dir, "prdash")
+	if err := os.MkdirAll(pdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "[review]\nprovider = \"claude\"\nargs = [\"--permission-mode\", \"auto\"]\nprompt = \"go {{.URL}}\"\n"
+	if err := os.WriteFile(filepath.Join(pdir, "config.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Args) != 2 || r.Args[0] != "--permission-mode" || r.Args[1] != "auto" {
+		t.Errorf("Args = %v", r.Args)
+	}
+}

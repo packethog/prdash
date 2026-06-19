@@ -95,19 +95,29 @@ approved + CI green), `esc` cancels.
 ### Review launcher (cmux only)
 
 Inside [cmux](https://github.com/manaflow-ai/cmux), pressing `v` on a PR in the
-**Awaiting my review** bucket spawns a new agent surface (Claude or Codex) seeded
-with a prompt you configure, with the PR's fields substituted in. prdash only
-launches the surface — the prompt defines what the agent does (review, post
-comments, etc.).
+**Awaiting my review** bucket opens a new terminal pane below
+(`cmux new-pane --type terminal --direction down`) and runs
+`<provider> <args…> '<prompt>'` in it — i.e. it launches your configured agent
+CLI (Claude or Codex) with the prompt, the PR's fields substituted in. prdash only
+launches the pane and the command — the prompt defines what the agent does (review,
+post comments, etc.).
 
 Configure it in `~/.config/prdash/config.toml` (honoring `$XDG_CONFIG_HOME`):
 
 ```toml
 [review]
-provider = "claude"   # "claude" | "codex"
+provider = "claude"                      # "claude" | "codex"
+args = ["--permission-mode", "auto"]     # optional flags before the prompt
 prompt = "Run the consensus-pr-review skill on {{.URL}}. If unavailable, stop and report."
 ```
 
-Prompt template fields: `{{.URL}}`, `{{.Repo}}`, `{{.Number}}`, `{{.Title}}`,
-`{{.Branch}}`. When the config is missing/invalid, or you are not under cmux, the
-`v` key is hidden and inert.
+- `provider` — the CLI to launch (`claude` or `codex`).
+- `args` — optional flags passed to the provider before the prompt. For Claude,
+  `["--permission-mode", "auto"]` starts it in auto-approval mode;
+  `["--dangerously-skip-permissions"]` runs fully unattended. Omit for none.
+- `prompt` — a Go `text/template`; fields: `{{.URL}}`, `{{.Repo}}`, `{{.Number}}`,
+  `{{.Title}}`, `{{.Branch}}`. Each part is shell-quoted, so it survives the pane's
+  shell as one argument.
+
+When the config is missing/invalid, or you are not under cmux, or you are not in
+the Awaiting-my-review bucket, the `v` key is hidden and inert.
