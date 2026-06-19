@@ -1,10 +1,15 @@
 package ui
 
 import (
+	"os"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/packethog/prdash/internal/pr"
 )
+
+// inCmux reports whether prdash is running inside a cmux surface.
+func inCmux() bool { return os.Getenv("CMUX_WORKSPACE_ID") != "" }
 
 // Update is the Bubble Tea update function.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -60,6 +65,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openedMsg:
 		if msg.err != nil {
 			m.toast = "Open failed: " + msg.err.Error()
+		}
+		return m, nil
+	case reviewLaunchedMsg:
+		if msg.err != nil {
+			m.toast = "Review failed: " + msg.err.Error()
+		} else {
+			m.toast = "Review started for " + msg.p.Ref()
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -200,8 +212,20 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if p, ok := m.selected(); ok {
 			return m, openCmd(m.runner, p)
 		}
+	case "v":
+		if m.reviewEligible() {
+			if p, ok := m.selected(); ok {
+				return m, reviewCmd(m.cmux, m.review, p)
+			}
+		}
 	}
 	return m, nil
+}
+
+// reviewEligible reports whether the review launcher should act/show: under
+// cmux, in the Awaiting-my-review bucket, with a configured review.
+func (m *Model) reviewEligible() bool {
+	return inCmux() && m.bucket == pr.AwaitingReview && m.review.Enabled()
 }
 
 func (m *Model) mergeBlockers() []string {

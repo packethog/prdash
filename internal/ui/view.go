@@ -369,7 +369,12 @@ func (m *Model) View() string {
 	if m.toast != "" {
 		status += "   " + m.toast
 	}
-	keys := dimStyle.Render("↑↓ move  tab switch  r refresh  m merge  c close  o open  q quit") + hint
+	keyText := "↑↓ move  tab switch  r refresh  m merge  c close  o open"
+	if m.reviewEligible() {
+		keyText += "  v review"
+	}
+	keyText += "  q quit"
+	keys := dimStyle.Render(keyText) + hint
 
 	all := []string{titleStyle.Render("prdash"), ""}
 	all = append(all, visible...)

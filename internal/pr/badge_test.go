@@ -37,6 +37,16 @@ func TestReviewCommented(t *testing.T) {
 		{"draft wins over reviews", PR{IsDraft: true, LatestReviews: []string{"COMMENTED"}}, ReviewDraft},
 		{"only pending/dismissed is not commented", PR{LatestReviews: []string{"PENDING", "DISMISSED"}}, ReviewPending},
 		{"no reviews is pending", PR{LatestReviews: nil}, ReviewPending},
+		// GitHub drops the reviewer from latestReviews once approving clears the
+		// review request; the approval survives only in latestOpinionatedReviews.
+		{"opinionated approval with empty latestReviews shows approved", PR{ReviewDecision: "", LatestReviews: nil, OpinionatedReviews: []string{"APPROVED"}}, ReviewApproved},
+		{"opinionated changes-requested with empty latestReviews", PR{ReviewDecision: "", LatestReviews: nil, OpinionatedReviews: []string{"CHANGES_REQUESTED"}}, ReviewChangesRequested},
+		{"opinionated changes wins over latestReviews approval", PR{ReviewDecision: "", LatestReviews: []string{"APPROVED"}, OpinionatedReviews: []string{"CHANGES_REQUESTED"}}, ReviewChangesRequested},
+		{"opinionated approval with latest comment shows approved", PR{ReviewDecision: "", LatestReviews: []string{"COMMENTED"}, OpinionatedReviews: []string{"APPROVED"}}, ReviewApproved},
+		// A required-review rule that is not yet satisfied must NOT be upgraded to
+		// Approved by an insufficient per-reviewer approval.
+		{"review required is not upgraded by an opinion approval", PR{ReviewDecision: "REVIEW_REQUIRED", OpinionatedReviews: []string{"APPROVED"}}, ReviewPending},
+		{"review required with a comment shows commented", PR{ReviewDecision: "REVIEW_REQUIRED", LatestReviews: []string{"COMMENTED"}}, ReviewCommented},
 	}
 	for _, c := range cases {
 		if got := Review(c.p); got != c.want {

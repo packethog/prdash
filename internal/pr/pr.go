@@ -106,6 +106,10 @@ type PR struct {
 	MergeStateStatus string   // "CLEAN", "BLOCKED", "BEHIND", "DIRTY", "UNSTABLE", "DRAFT", ...
 	RollupState      string   // "SUCCESS", "PENDING", "EXPECTED", "FAILURE", "ERROR", ""
 	LatestReviews    []string // per-reviewer latest review states: APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED, PENDING
+	// OpinionatedReviews holds per-reviewer latest APPROVED/CHANGES_REQUESTED
+	// states (GitHub's latestOpinionatedReviews). It surfaces an approval that
+	// LatestReviews can miss once approving clears the reviewer's request.
+	OpinionatedReviews []string
 }
 
 // Ref is the short "owner/name#number" identifier.

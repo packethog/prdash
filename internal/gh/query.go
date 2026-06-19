@@ -13,6 +13,7 @@ fragment pr on PullRequest {
   headRefName
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   latestReviews(first: 50) { nodes { state } }
+  latestOpinionatedReviews(first: 50) { nodes { state } }
 }`
 
 const (

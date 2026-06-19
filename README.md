@@ -65,6 +65,7 @@ prdash --limit 25      # fetch up to 25 PRs per bucket (min 1)
 | `m` | merge selected (authored only; opens confirm) |
 | `c` | close selected (authored only; opens confirm) |
 | `o` | open selected PR in browser |
+| `v` | review selected with Claude/Codex (awaiting-review bucket, cmux only, when configured) |
 | `q` / `ctrl+c` | quit |
 
 In the merge modal: `←`/`→` (or `s`) cycle method, `enter` confirms (only when
@@ -90,3 +91,33 @@ approved + CI green), `esc` cancels.
   times update once per second.
 - Review badges: `Approved`, `Changes requested`, `Commented` (reviewed with
   feedback, no decision yet), `Pending review`, `Draft`.
+
+### Review launcher (cmux only)
+
+Inside [cmux](https://github.com/manaflow-ai/cmux), pressing `v` on a PR in the
+**Awaiting my review** bucket opens a new terminal pane below
+(`cmux new-pane --type terminal --direction down`) and runs
+`<provider> <args…> '<prompt>'` in it — i.e. it launches your configured agent
+CLI (Claude or Codex) with the prompt, the PR's fields substituted in. prdash only
+launches the pane and the command — the prompt defines what the agent does (review,
+post comments, etc.).
+
+Configure it in `~/.config/prdash/config.toml` (honoring `$XDG_CONFIG_HOME`):
+
+```toml
+[review]
+provider = "claude"                      # "claude" | "codex"
+args = ["--permission-mode", "auto"]     # optional flags before the prompt
+prompt = "Run the consensus-pr-review skill on {{.URL}}. If unavailable, stop and report."
+```
+
+- `provider` — the CLI to launch (`claude` or `codex`).
+- `args` — optional flags passed to the provider before the prompt. For Claude,
+  `["--permission-mode", "auto"]` starts it in auto-approval mode;
+  `["--dangerously-skip-permissions"]` runs fully unattended. Omit for none.
+- `prompt` — a Go `text/template`; fields: `{{.URL}}`, `{{.Repo}}`, `{{.Number}}`,
+  `{{.Title}}`, `{{.Branch}}`. Each part is shell-quoted, so it survives the pane's
+  shell as one argument.
+
+When the config is missing/invalid, or you are not under cmux, or you are not in
+the Awaiting-my-review bucket, the `v` key is hidden and inert.

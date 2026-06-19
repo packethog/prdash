@@ -58,6 +58,11 @@ type prNode struct {
 			State string `json:"state"`
 		} `json:"nodes"`
 	} `json:"latestReviews"`
+	LatestOpinionatedReviews struct {
+		Nodes []struct {
+			State string `json:"state"`
+		} `json:"nodes"`
+	} `json:"latestOpinionatedReviews"`
 }
 
 func (n prNode) toPR() pr.PR {
@@ -70,19 +75,24 @@ func (n prNode) toPR() pr.PR {
 	for _, r := range n.LatestReviews.Nodes {
 		reviews = append(reviews, r.State)
 	}
+	var opinionated []string
+	for _, r := range n.LatestOpinionatedReviews.Nodes {
+		opinionated = append(opinionated, r.State)
+	}
 	return pr.PR{
-		Repo:             n.Repository.NameWithOwner,
-		Number:           n.Number,
-		Title:            n.Title,
-		URL:              n.URL,
-		HeadRefName:      n.HeadRefName,
-		IsDraft:          n.IsDraft,
-		UpdatedAt:        t,
-		ReviewDecision:   n.ReviewDecision,
-		Mergeable:        n.Mergeable,
-		MergeStateStatus: n.MergeStateStatus,
-		RollupState:      rollup,
-		LatestReviews:    reviews,
+		Repo:               n.Repository.NameWithOwner,
+		Number:             n.Number,
+		Title:              n.Title,
+		URL:                n.URL,
+		HeadRefName:        n.HeadRefName,
+		IsDraft:            n.IsDraft,
+		UpdatedAt:          t,
+		ReviewDecision:     n.ReviewDecision,
+		Mergeable:          n.Mergeable,
+		MergeStateStatus:   n.MergeStateStatus,
+		RollupState:        rollup,
+		LatestReviews:      reviews,
+		OpinionatedReviews: opinionated,
 	}
 }
 
