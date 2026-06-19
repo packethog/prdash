@@ -65,6 +65,7 @@ prdash --limit 25      # fetch up to 25 PRs per bucket (min 1)
 | `m` | merge selected (authored only; opens confirm) |
 | `c` | close selected (authored only; opens confirm) |
 | `o` | open selected PR in browser |
+| `v` | review selected with Claude/Codex (awaiting-review bucket, cmux only, when configured) |
 | `q` / `ctrl+c` | quit |
 
 In the merge modal: `←`/`→` (or `s`) cycle method, `enter` confirms (only when
@@ -90,3 +91,23 @@ approved + CI green), `esc` cancels.
   times update once per second.
 - Review badges: `Approved`, `Changes requested`, `Commented` (reviewed with
   feedback, no decision yet), `Pending review`, `Draft`.
+
+### Review launcher (cmux only)
+
+Inside [cmux](https://github.com/manaflow-ai/cmux), pressing `v` on a PR in the
+**Awaiting my review** bucket spawns a new agent surface (Claude or Codex) seeded
+with a prompt you configure, with the PR's fields substituted in. prdash only
+launches the surface — the prompt defines what the agent does (review, post
+comments, etc.).
+
+Configure it in `~/.config/prdash/config.toml` (honoring `$XDG_CONFIG_HOME`):
+
+```toml
+[review]
+provider = "claude"   # "claude" | "codex"
+prompt = "Run the consensus-pr-review skill on {{.URL}}. If unavailable, stop and report."
+```
+
+Prompt template fields: `{{.URL}}`, `{{.Repo}}`, `{{.Number}}`, `{{.Title}}`,
+`{{.Branch}}`. When the config is missing/invalid, or you are not under cmux, the
+`v` key is hidden and inert.
