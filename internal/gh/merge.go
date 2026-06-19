@@ -32,3 +32,10 @@ func Open(ctx context.Context, r Runner, p pr.PR) error {
 	_, err := r.Run(ctx, "pr", "view", p.URL, "--web")
 	return err
 }
+
+// Close closes the PR via `gh pr close`. The branch is kept (no --delete-branch);
+// a closed PR can be reopened on GitHub.
+func Close(ctx context.Context, r Runner, p pr.PR) error {
+	_, err := r.Run(ctx, "pr", "close", p.URL)
+	return err
+}

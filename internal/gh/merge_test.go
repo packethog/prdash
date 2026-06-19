@@ -63,3 +63,27 @@ func TestOpenBuildsArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestCloseBuildsArgs(t *testing.T) {
+	f := &fakeRunner{}
+	p := pr.PR{URL: "https://github.com/o/r/pull/9"}
+	if err := Close(context.Background(), f, p); err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(f.gotArgs[0], " ")
+	for _, want := range []string{"pr close", p.URL} {
+		if !strings.Contains(args, want) {
+			t.Errorf("args %q missing %q", args, want)
+		}
+	}
+	if strings.Contains(args, "--delete-branch") {
+		t.Error("close must not delete the branch")
+	}
+}
+
+func TestClosePropagatesError(t *testing.T) {
+	f := &fakeRunner{err: errors.New("nope")}
+	if err := Close(context.Background(), f, pr.PR{URL: "u"}); err == nil {
+		t.Fatal("expected error")
+	}
+}
