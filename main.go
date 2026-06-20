@@ -45,10 +45,11 @@ func main() {
 	if err != nil {
 		os.Exit(2)
 	}
-	rev, err := prconfig.Load()
+	rev, ciCfg, err := prconfig.Load()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "prdash:", err) // non-fatal: review stays disabled
+		fmt.Fprintln(os.Stderr, "prdash:", err) // non-fatal: affected feature stays disabled
 	}
+	_ = ciCfg
 	model := ui.New(gh.NewExecRunner(), cfg.interval, cfg.limit, ui.WithReview(rev))
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "prdash:", err)
