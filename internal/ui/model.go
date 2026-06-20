@@ -25,6 +25,8 @@ const (
 	modalNone modalState = iota
 	modalMerge
 	modalClose
+	modalRerun
+	modalDetails
 )
 
 type section int
@@ -73,6 +75,18 @@ type Model struct {
 	ci        config.CI
 	workflows []ci.WorkflowRuns
 	expanded  map[string]bool
+
+	detailRun    ci.Run
+	detailGlob   string // summaryArtifact glob for the captured run's workflow
+	detailFile   string // summaryFile within the artifact
+	detail       gh.RunDetail
+	detailErr    error
+	summary      string
+	summaryErr   error
+	detailScroll int // scroll offset within the details modal body
+
+	rerunRun  ci.Run
+	rerunning bool
 
 	width, height int
 }
@@ -210,9 +224,6 @@ func (m *Model) selectedCIItem() (ciItem, bool) {
 }
 
 // selectedRun returns the run under the cursor, if the cursor is on a run row.
-// Used by Task 10 (CI run details modal).
-//
-//nolint:unused
 func (m *Model) selectedRun() (ci.Run, bool) {
 	it, ok := m.selectedCIItem()
 	if !ok || it.kind != ciRun {

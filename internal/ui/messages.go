@@ -15,9 +15,11 @@ import (
 )
 
 const (
-	fetchTimeout   = 20 * time.Second
-	mergeTimeout   = 60 * time.Second
-	ciListTimeout  = 30 * time.Second
+	fetchTimeout    = 20 * time.Second
+	mergeTimeout    = 60 * time.Second
+	ciListTimeout   = 30 * time.Second
+	ciDetailTimeout = 30 * time.Second
+	rerunTimeout    = 30 * time.Second
 )
 
 type prsFetchedMsg struct{ res gh.FetchResult }
@@ -47,6 +49,21 @@ type tickMsg struct{ gen int }
 type uiTickMsg struct{}
 
 type ciFetchedMsg struct{ workflows []ci.WorkflowRuns }
+
+type runDetailMsg struct {
+	runID int64 // correlation: ignore if it doesn't match the open modal's run
+	d     gh.RunDetail
+	err   error
+}
+type summaryMsg struct {
+	runID int64
+	data  []byte
+	err   error
+}
+type ciDebugLaunchedMsg struct{ err error }
+type rerunDoneMsg struct{ run ci.Run }
+type rerunFailedMsg struct{ err error }
+type openedURLMsg struct{ err error }
 
 func fetchCmd(r gh.Runner, limit int) tea.Cmd {
 	return func() tea.Msg {
@@ -139,5 +156,62 @@ func ciFetchCmd(r gh.Runner, c config.CI) tea.Cmd {
 		}
 		wg.Wait()
 		return ciFetchedMsg{workflows: wfs}
+	}
+}
+
+func runDetailCmd(r gh.Runner, repo string, runID int64) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), ciDetailTimeout)
+		defer cancel()
+		d, err := gh.FetchRunDetail(ctx, r, repo, runID)
+		return runDetailMsg{runID: runID, d: d, err: err}
+	}
+}
+
+func summaryCmd(r gh.Runner, repo string, runID int64, glob, file string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), ciDetailTimeout)
+		defer cancel()
+		data, err := gh.FetchRunSummary(ctx, r, repo, runID, glob, file)
+		return summaryMsg{runID: runID, data: data, err: err}
+	}
+}
+
+func ciDebugCmd(cmux gh.Runner, c config.CI, run ci.Run) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		prompt, err := c.Render(config.RunInfo{
+			URL:        run.URL,
+			Repo:       run.Repo,
+			Workflow:   run.WorkflowName,
+			Branch:     run.Branch,
+			Conclusion: run.Conclusion,
+			RunID:      run.RunID,
+			RunNumber:  run.RunNumber,
+		})
+		if err != nil {
+			return ciDebugLaunchedMsg{err: err}
+		}
+		return ciDebugLaunchedMsg{err: gh.StartCIDebug(ctx, cmux, c.Provider, c.Args, prompt)}
+	}
+}
+
+func rerunCmd(r gh.Runner, run ci.Run) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rerunTimeout)
+		defer cancel()
+		if err := gh.RerunFailed(ctx, r, run.Repo, run.RunID); err != nil {
+			return rerunFailedMsg{err: err}
+		}
+		return rerunDoneMsg{run: run}
+	}
+}
+
+func openURLCmd(r gh.Runner, url string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		return openedURLMsg{err: gh.OpenURL(ctx, r, url)}
 	}
 }

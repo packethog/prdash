@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/packethog/prdash/internal/ci"
+	"github.com/packethog/prdash/internal/gh"
 	"github.com/packethog/prdash/internal/pr"
 )
 
@@ -81,6 +84,42 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast("Review started for " + msg.p.Ref())
 		}
 		return m, nil
+	case runDetailMsg:
+		if m.modal == modalDetails && msg.runID == m.detailRun.RunID {
+			m.detail, m.detailErr = msg.d, msg.err
+		}
+		return m, nil
+	case summaryMsg:
+		if m.modal == modalDetails && msg.runID == m.detailRun.RunID {
+			if msg.err != nil {
+				m.summaryErr = msg.err
+			} else {
+				m.summary = string(msg.data)
+			}
+		}
+		return m, nil
+	case ciDebugLaunchedMsg:
+		if msg.err != nil {
+			m.setToast("Debug failed: " + msg.err.Error())
+		} else {
+			m.setToast("Debug started")
+		}
+		return m, nil
+	case rerunDoneMsg:
+		m.rerunning = false
+		m.setToast(fmt.Sprintf("Rerun queued #%d", msg.run.RunNumber))
+		// No immediate refetch: `gh run rerun` queues asynchronously, so a refetch
+		// now would still show the old failure. The normal tick picks it up.
+		return m, nil
+	case rerunFailedMsg:
+		m.rerunning = false
+		m.setToast("Rerun failed: " + msg.err.Error())
+		return m, nil
+	case openedURLMsg:
+		if msg.err != nil {
+			m.setToast("Open failed: " + msg.err.Error())
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.onKey(msg)
 	}
@@ -121,9 +160,9 @@ func (m *Model) onFetched(msg prsFetchedMsg) (tea.Model, tea.Cmd) {
 	m.fetching = false
 	m.backoff.RecordSuccess()
 	m.clampCursor()
-	// If a modal was armed on a PR the refetch dropped (closed/merged
-	// elsewhere), dismiss the now-orphaned inline prompt.
-	if m.modal != modalNone && indexByURL(m.authored, m.modalPR.URL) < 0 {
+	// Only the merge/close modals are anchored to a PR row; a refetch that drops
+	// that PR dismisses them. CI modals (details/rerun) are not PR-anchored.
+	if (m.modal == modalMerge || m.modal == modalClose) && indexByURL(m.authored, m.modalPR.URL) < 0 {
 		m.modal = modalNone
 	}
 	m.pruneActioned()
@@ -243,7 +282,26 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.modalPR = p
 			}
 		}
+	case "d":
+		if m.section == secCI && m.ciDebugEligible() {
+			if r, ok := m.selectedRun(); ok && ci.IsFailed(r) {
+				return m, ciDebugCmd(m.cmux, m.ci, r)
+			}
+		}
+	case "R":
+		if m.section == secCI {
+			if r, ok := m.selectedRun(); ok && ci.IsFailed(r) {
+				m.modal = modalRerun
+				m.rerunRun = r
+			}
+		}
 	case "o":
+		if m.section == secCI {
+			if r, ok := m.selectedRun(); ok {
+				return m, openURLCmd(m.runner, r.URL)
+			}
+			return m, nil
+		}
 		if p, ok := m.selected(); ok {
 			return m, openCmd(m.runner, p)
 		}
@@ -261,7 +319,18 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					key := wfKey(m.workflows[it.wf])
 					m.expanded[key] = !m.expanded[key]
 				case ciRun:
-					// details modal — implemented in Task 10
+					r := m.workflows[it.wf].Runs[it.run]
+					m.modal = modalDetails
+					m.detailRun = r
+					m.summary, m.summaryErr, m.detailErr, m.detailScroll = "", nil, nil, 0
+					m.detail = gh.RunDetail{}
+					glob, file := m.summaryConfigFor(r)
+					m.detailGlob, m.detailFile = glob, file
+					cmds := []tea.Cmd{runDetailCmd(m.runner, r.Repo, r.RunID)}
+					if glob != "" {
+						cmds = append(cmds, summaryCmd(m.runner, r.Repo, r.RunID, glob, file))
+					}
+					return m, tea.Batch(cmds...)
 				}
 			}
 		}
@@ -273,6 +342,34 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // cmux, in the Reviewing section, with a configured review.
 func (m *Model) reviewEligible() bool {
 	return inCmux() && m.section == secReviewing && m.review.Enabled()
+}
+
+func (m *Model) ciDebugEligible() bool {
+	return inCmux() && m.ci.DebugEnabled()
+}
+
+// summaryConfigFor returns the summaryArtifact glob and file configured for the
+// run's workflow. An exact branch match wins; an unbranched entry is the
+// fallback. This is order-independent (a branch-specific entry is preferred even
+// if an unbranched entry for the same workflow appears earlier in config).
+func (m *Model) summaryConfigFor(r ci.Run) (glob, file string) {
+	fbIdx := -1
+	for i := range m.ci.Workflows {
+		w := m.ci.Workflows[i]
+		if w.Repo != r.Repo || w.Workflow != r.WorkflowKey {
+			continue
+		}
+		if w.Branch == r.Branch {
+			return w.SummaryArtifact, w.SummaryFile
+		}
+		if w.Branch == "" && fbIdx < 0 {
+			fbIdx = i
+		}
+	}
+	if fbIdx >= 0 {
+		return m.ci.Workflows[fbIdx].SummaryArtifact, m.ci.Workflows[fbIdx].SummaryFile
+	}
+	return "", ""
 }
 
 func (m *Model) mergeBlockers() []string {
@@ -307,9 +404,20 @@ func (m *Model) onCloseModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) onModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.modal == modalClose {
+	switch m.modal {
+	case modalDetails:
+		return m.onDetailsModalKey(msg)
+	case modalRerun:
+		return m.onRerunModalKey(msg)
+	case modalClose:
 		return m.onCloseModalKey(msg)
+	default:
+		return m.onMergeModalKey(msg)
 	}
+}
+
+// onMergeModalKey is the former onModalKey body (esc / left / right / s / enter).
+func (m *Model) onMergeModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.modal = modalNone
@@ -322,6 +430,47 @@ func (m *Model) onModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.merging = true
 			m.modal = modalNone
 			return m, mergeCmd(m.runner, m.modalPR, m.method)
+		}
+	}
+	return m, nil
+}
+
+func (m *Model) onDetailsModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "enter", "q":
+		m.modal = modalNone
+	case "up", "k":
+		if m.detailScroll > 0 {
+			m.detailScroll--
+		}
+	case "down", "j":
+		if m.detailScroll < len(m.detailsLines())-1 {
+			m.detailScroll++
+		}
+	case "o":
+		return m, openURLCmd(m.runner, m.detailRun.URL)
+	case "d":
+		if m.ciDebugEligible() && ci.IsFailed(m.detailRun) {
+			return m, ciDebugCmd(m.cmux, m.ci, m.detailRun)
+		}
+	case "R":
+		if ci.IsFailed(m.detailRun) {
+			m.modal = modalRerun
+			m.rerunRun = m.detailRun
+		}
+	}
+	return m, nil
+}
+
+func (m *Model) onRerunModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.modal = modalNone
+	case "enter":
+		if !m.rerunning {
+			m.rerunning = true
+			m.modal = modalNone
+			return m, rerunCmd(m.runner, m.rerunRun)
 		}
 	}
 	return m, nil

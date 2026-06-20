@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/packethog/prdash/internal/ci"
+	"github.com/packethog/prdash/internal/gh"
 	"github.com/packethog/prdash/internal/pr"
 )
 
@@ -440,7 +442,74 @@ func (m *Model) renderCI() (lines []string, cursorLine int) {
 	if m.section == secCI && m.cursor >= 0 && m.cursor < len(items) {
 		cursorLine = itemLine[m.cursor]
 	}
+	if m.modal == modalRerun {
+		lines = append(lines, promptStyle.Render(fmt.Sprintf("   ↳ rerun failed jobs of #%d?   ⏎ rerun   esc cancel", m.rerunRun.RunNumber)))
+	}
 	return lines, cursorLine
+}
+
+// detailsLines builds the modal body for the details view of the selected CI run.
+func (m *Model) detailsLines() []string {
+	r := m.detailRun
+	var b []string
+	b = append(b, titleStyle.Render(fmt.Sprintf("run #%d · %s", r.RunNumber, r.WorkflowName)))
+	if m.detailErr != nil {
+		b = append(b, offlineStyle.Render("  failed to load run detail: "+m.detailErr.Error()))
+	} else {
+		// Until FetchRunDetail lands, render from the already-known ci.Run so the
+		// header is never blank; show a loading hint while detail data is pending.
+		status, concl, branch := m.detail.Status, m.detail.Conclusion, m.detail.HeadBranch
+		loading := status == ""
+		if loading {
+			status, concl, branch = m.detailRun.Status, m.detailRun.Conclusion, m.detailRun.Branch
+		}
+		b = append(b, fmt.Sprintf("  status: %s / %s    branch: %s", status, concl, branch))
+		if loading {
+			b = append(b, dimStyle.Render("  loading details…"))
+		}
+		if !m.detail.CreatedAt.IsZero() {
+			timing := "  started " + humanizeSince(m.now().Sub(m.detail.CreatedAt)) + " ago"
+			if m.detail.UpdatedAt.After(m.detail.CreatedAt) {
+				timing += fmt.Sprintf(" (ran %s)", humanizeSince(m.detail.UpdatedAt.Sub(m.detail.CreatedAt)))
+			}
+			b = append(b, timing)
+		}
+		if len(m.detail.Jobs) > 0 {
+			parts := make([]string, 0, len(m.detail.Jobs))
+			for _, j := range m.detail.Jobs {
+				parts = append(parts, jobGlyph(j)+" "+j.Name)
+			}
+			b = append(b, "  jobs: "+strings.Join(parts, "   "))
+		}
+		if job, step, ok := m.detail.FailedStep(); ok {
+			label := job
+			if step != "" {
+				label += " · " + step
+			}
+			b = append(b, "  failed step: "+offlineStyle.Render(label))
+		}
+	}
+	b = append(b, "")
+	switch {
+	case m.summary != "":
+		b = append(b, strings.Split(strings.TrimRight(m.summary, "\n"), "\n")...)
+	case m.summaryErr != nil && errors.Is(m.summaryErr, gh.ErrNoArtifact):
+		b = append(b, dimStyle.Render("no analysis artifact for this run — press o to open the run page"))
+	case m.summaryErr != nil:
+		b = append(b, dimStyle.Render("could not load analysis: "+m.summaryErr.Error()))
+	case m.detailGlob != "":
+		b = append(b, dimStyle.Render("loading analysis…"))
+	default:
+		b = append(b, dimStyle.Render("press o to open the run page"))
+	}
+	return b
+}
+
+// jobGlyph maps a job's status/conclusion to a colored status glyph (reusing the
+// run status mapping).
+func jobGlyph(j gh.JobDetail) string {
+	st := ci.Status(ci.Run{Status: j.Status, Conclusion: j.Conclusion})
+	return ciRunStyle(st).Render(st.Symbol())
 }
 
 // promptLines is the inline confirm shown beneath the selected row while a
@@ -493,6 +562,23 @@ func (m *Model) clampLine(s string) string {
 func (m *Model) View() string {
 	body, cursorLine := m.renderBody()
 
+	if m.modal == modalDetails {
+		body = m.detailsLines()
+		cursorLine = -1
+		// Apply the modal scroll offset with a LOCAL clamp — View must not mutate
+		// model state. The offset is bounded in onDetailsModalKey too.
+		scroll := m.detailScroll
+		if scroll > len(body)-1 {
+			scroll = len(body) - 1
+		}
+		if scroll < 0 {
+			scroll = 0
+		}
+		if scroll > 0 {
+			body = body[scroll:]
+		}
+	}
+
 	var visible []string
 	hint := ""
 	if m.height <= 0 {
@@ -513,11 +599,32 @@ func (m *Model) View() string {
 	if m.toast != "" {
 		status += "   " + m.toast
 	}
-	keyText := "↑↓ move  tab switch  r refresh  m merge  c close  o open"
-	if m.reviewEligible() {
-		keyText += "  v review"
+	keyText := "↑↓ move  tab switch  r refresh"
+	switch {
+	case m.modal == modalDetails:
+		keyText = "↑↓ scroll  ↵/esc close  o open run page"
+		if ci.IsFailed(m.detailRun) {
+			if m.ciDebugEligible() {
+				keyText += "  d debug"
+			}
+			keyText += "  R rerun"
+		}
+	case m.section == secCI:
+		keyText += "  ↵ details/expand  o open"
+		if r, ok := m.selectedRun(); ok && ci.IsFailed(r) {
+			if m.ciDebugEligible() {
+				keyText += "  d debug"
+			}
+			keyText += "  R rerun"
+		}
+		keyText += "  q quit"
+	default:
+		keyText += "  m merge  c close  o open"
+		if m.reviewEligible() {
+			keyText += "  v review"
+		}
+		keyText += "  q quit"
 	}
-	keyText += "  q quit"
 	keys := dimStyle.Render(keyText) + hint
 
 	all := []string{titleStyle.Render("prdash"), ""}
