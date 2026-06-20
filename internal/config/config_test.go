@@ -68,7 +68,7 @@ func TestZeroReviewDisabled(t *testing.T) {
 }
 
 func TestLoadMissingFileIsDisabledNoError(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty dir: no config.toml
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty dir: no config.yaml
 	r, err := Load()
 	if err != nil {
 		t.Fatalf("missing file should not error: %v", err)
@@ -78,17 +78,22 @@ func TestLoadMissingFileIsDisabledNoError(t *testing.T) {
 	}
 }
 
-func TestLoadValidFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+func writeConfig(t *testing.T, dir, body string) {
+	t.Helper()
 	pdir := filepath.Join(dir, "prdash")
 	if err := os.MkdirAll(pdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "[review]\nprovider = \"claude\"\nprompt = \"go {{.URL}}\"\n"
-	if err := os.WriteFile(filepath.Join(pdir, "config.toml"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pdir, "config.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestLoadValidFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	body := "review:\n  provider: claude\n  prompt: \"go {{.URL}}\"\n"
+	writeConfig(t, dir, body)
 	r, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -101,14 +106,8 @@ func TestLoadValidFile(t *testing.T) {
 func TestLoadInvalidFileIsDisabledWithError(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	pdir := filepath.Join(dir, "prdash")
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	body := "[review]\nprovider = \"nope\"\nprompt = \"x\"\n"
-	if err := os.WriteFile(filepath.Join(pdir, "config.toml"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	body := "review:\n  provider: nope\n  prompt: x\n"
+	writeConfig(t, dir, body)
 	r, err := Load()
 	if err == nil {
 		t.Fatal("expected error for invalid provider")
@@ -121,53 +120,35 @@ func TestLoadInvalidFileIsDisabledWithError(t *testing.T) {
 func TestLoadFileWithoutReviewTableIsDisabledNoError(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	pdir := filepath.Join(dir, "prdash")
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Present file, but no [review] table at all.
-	if err := os.WriteFile(filepath.Join(pdir, "config.toml"), []byte("# empty\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// Present file, but no review section at all.
+	writeConfig(t, dir, "# empty\n")
 	r, err := Load()
 	if err != nil {
-		t.Fatalf("absent [review] table should not error: %v", err)
+		t.Fatalf("absent review section should not error: %v", err)
 	}
 	if r.Enabled() {
-		t.Error("absent [review] table should be disabled")
+		t.Error("absent review section should be disabled")
 	}
 }
 
-func TestLoadMalformedTOMLIsDisabledWithError(t *testing.T) {
+func TestLoadMalformedYAMLIsDisabledWithError(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	pdir := filepath.Join(dir, "prdash")
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pdir, "config.toml"), []byte("[review\nprovider = "), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeConfig(t, dir, "review:\n  provider: [unclosed\n")
 	r, err := Load()
 	if err == nil {
-		t.Fatal("expected error for malformed TOML")
+		t.Fatal("expected error for malformed YAML")
 	}
 	if r.Enabled() {
-		t.Error("malformed TOML should be disabled")
+		t.Error("malformed YAML should be disabled")
 	}
 }
 
 func TestLoadReadsArgs(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	pdir := filepath.Join(dir, "prdash")
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	body := "[review]\nprovider = \"claude\"\nargs = [\"--permission-mode\", \"auto\"]\nprompt = \"go {{.URL}}\"\n"
-	if err := os.WriteFile(filepath.Join(pdir, "config.toml"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	body := "review:\n  provider: claude\n  args: [\"--permission-mode\", \"auto\"]\n  prompt: \"go {{.URL}}\"\n"
+	writeConfig(t, dir, body)
 	r, err := Load()
 	if err != nil {
 		t.Fatal(err)

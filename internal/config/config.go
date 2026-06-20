@@ -1,4 +1,4 @@
-// Package config loads prdash's optional TOML config. Today it carries only the
+// Package config loads prdash's optional YAML config. Today it carries only the
 // review-launcher settings: which agent provider to spawn and the prompt
 // template to seed it with.
 package config
@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v3"
 
 	"github.com/packethog/prdash/internal/pr"
 )
@@ -28,10 +28,10 @@ type Review struct {
 
 type fileSchema struct {
 	Review struct {
-		Provider string   `toml:"provider"`
-		Args     []string `toml:"args"`
-		Prompt   string   `toml:"prompt"`
-	} `toml:"review"`
+		Provider string   `yaml:"provider"`
+		Args     []string `yaml:"args"`
+		Prompt   string   `yaml:"prompt"`
+	} `yaml:"review"`
 }
 
 func validProvider(p string) bool { return p == "claude" || p == "codex" }
@@ -65,11 +65,11 @@ func configPath() (string, error) {
 		}
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "prdash", "config.toml"), nil
+	return filepath.Join(base, "prdash", "config.yaml"), nil
 }
 
 // Load reads the review config from the XDG config path. A missing file yields a
-// disabled Review and no error. A present-but-invalid file (bad TOML, unknown
+// disabled Review and no error. A present-but-invalid file (bad YAML, unknown
 // provider, empty/unparseable prompt) yields a disabled Review and a non-nil
 // error so the caller can print a one-line note; prdash still starts.
 func Load() (Review, error) {
@@ -77,15 +77,19 @@ func Load() (Review, error) {
 	if err != nil {
 		return Review{}, nil // cannot resolve a config location → treat as no config
 	}
-	var f fileSchema
-	if _, err := toml.DecodeFile(path, &f); err != nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return Review{}, nil
 		}
 		return Review{}, fmt.Errorf("config: %w", err)
 	}
+	var f fileSchema
+	if err := yaml.Unmarshal(data, &f); err != nil {
+		return Review{}, fmt.Errorf("config: %w", err)
+	}
 	if f.Review.Provider == "" && f.Review.Prompt == "" {
-		return Review{}, nil // no [review] table
+		return Review{}, nil // no review section
 	}
 	r, err := Parse(f.Review.Provider, f.Review.Prompt)
 	if err != nil {
