@@ -12,8 +12,8 @@ func TestNewDefaults(t *testing.T) {
 	if !m.fetching {
 		t.Error("New should start in fetching state")
 	}
-	if m.bucket != pr.Authored {
-		t.Error("New should start on the Authored bucket")
+	if m.section != secAuthored {
+		t.Error("New should start on the Authored section")
 	}
 	if m.method != pr.MethodSquash {
 		t.Error("default method should be squash")
@@ -35,7 +35,7 @@ func TestRowsAndSelected(t *testing.T) {
 	if p, ok := m.selected(); !ok || p.Number != 2 {
 		t.Errorf("selected = %+v ok=%v", p, ok)
 	}
-	m.bucket = pr.AwaitingReview
+	m.section = secReviewing
 	m.cursor = 0
 	if p, ok := m.selected(); !ok || p.Number != 9 {
 		t.Errorf("reviewing selected = %+v ok=%v", p, ok)

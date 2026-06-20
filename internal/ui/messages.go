@@ -2,18 +2,22 @@ package ui
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/packethog/prdash/internal/ci"
 	"github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/gh"
 	"github.com/packethog/prdash/internal/pr"
 )
 
 const (
-	fetchTimeout = 20 * time.Second
-	mergeTimeout = 60 * time.Second
+	fetchTimeout   = 20 * time.Second
+	mergeTimeout   = 60 * time.Second
+	ciListTimeout  = 30 * time.Second
 )
 
 type prsFetchedMsg struct{ res gh.FetchResult }
@@ -41,6 +45,8 @@ type tickMsg struct{ gen int }
 // uiTickMsg fires once per second to keep relative-time displays advancing even
 // when there is no user interaction or data fetch.
 type uiTickMsg struct{}
+
+type ciFetchedMsg struct{ workflows []ci.WorkflowRuns }
 
 func fetchCmd(r gh.Runner, limit int) tea.Cmd {
 	return func() tea.Msg {
@@ -102,4 +108,36 @@ func tickCmd(d time.Duration, gen int) tea.Cmd {
 
 func uiTickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg { return uiTickMsg{} })
+}
+
+// ciFetchCmd fetches all configured workflows concurrently. Per-workflow errors
+// are carried on each WorkflowRuns.Err so one bad workflow degrades only its row.
+func ciFetchCmd(r gh.Runner, c config.CI) tea.Cmd {
+	return func() tea.Msg {
+		wfs := make([]ci.WorkflowRuns, len(c.Workflows))
+		var wg sync.WaitGroup
+		for i, w := range c.Workflows {
+			wg.Add(1)
+			go func(i int, w config.Workflow) {
+				defer wg.Done()
+				// Each goroutine owns a distinct index (wfs[i]); the WaitGroup
+				// barrier before the read makes this data-race-free. Recover so a
+				// panic in one workflow's fetch degrades its row, not the program.
+				defer func() {
+					if rec := recover(); rec != nil {
+						wfs[i] = ci.WorkflowRuns{Name: w.Name, Repo: w.Repo, Key: w.Workflow, Branch: w.Branch, Err: fmt.Errorf("panic: %v", rec)}
+					}
+				}()
+				ctx, cancel := context.WithTimeout(context.Background(), ciListTimeout)
+				defer cancel()
+				wr, err := gh.ListRuns(ctx, r, w.Repo, w.Workflow, w.Name, w.Branch, c.LimitFor(w))
+				if err != nil {
+					wr = ci.WorkflowRuns{Name: w.Name, Repo: w.Repo, Key: w.Workflow, Branch: w.Branch, Err: err}
+				}
+				wfs[i] = wr
+			}(i, w)
+		}
+		wg.Wait()
+		return ciFetchedMsg{workflows: wfs}
+	}
 }

@@ -18,13 +18,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case tickMsg:
-		if msg.gen != m.tickGen {
-			return m, nil
-		}
-		if m.fetching {
+		if msg.gen != m.tickGen || m.fetching {
 			return m, nil
 		}
 		m.fetching = true
+		if m.ciEnabled() {
+			return m, tea.Batch(fetchCmd(m.runner, m.limit), ciFetchCmd(m.runner, m.ci))
+		}
 		return m, fetchCmd(m.runner, m.limit)
 	case uiTickMsg:
 		m.expireToast()
@@ -33,6 +33,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onFetched(msg)
 	case fetchFailedMsg:
 		return m.onFetchFailed(msg)
+	case ciFetchedMsg:
+		m.workflows = msg.workflows
+		if m.section == secCI {
+			m.clampCursor()
+		}
+		return m, nil
 	case mergeDoneMsg:
 		m.merging = false
 		m.setToast("Merged " + msg.p.Ref())
@@ -156,13 +162,42 @@ func (m *Model) scheduleTick() tea.Cmd {
 	return tickCmd(m.backoff.Delay(), m.tickGen)
 }
 
+// itemCount returns the number of navigable items in the current section.
+func (m *Model) itemCount() int {
+	if m.section == secCI {
+		return len(m.ciItems())
+	}
+	return len(m.rows())
+}
+
 func (m *Model) clampCursor() {
-	n := len(m.rows())
+	var n int
+	if m.section == secCI {
+		n = len(m.ciItems())
+	} else {
+		n = len(m.rows())
+	}
 	if m.cursor >= n {
 		m.cursor = n - 1
 	}
 	if m.cursor < 0 {
 		m.cursor = 0
+	}
+}
+
+// nextSection returns the section that follows the current one, respecting
+// whether CI is enabled.
+func (m *Model) nextSection() section {
+	switch m.section {
+	case secAuthored:
+		return secReviewing
+	case secReviewing:
+		if m.ciEnabled() {
+			return secCI
+		}
+		return secAuthored
+	default:
+		return secAuthored
 	}
 }
 
@@ -178,24 +213,23 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case "down", "j":
-		if m.cursor < len(m.rows())-1 {
+		if m.cursor < m.itemCount()-1 {
 			m.cursor++
 		}
 	case "tab":
-		if m.bucket == pr.Authored {
-			m.bucket = pr.AwaitingReview
-		} else {
-			m.bucket = pr.Authored
-		}
+		m.section = m.nextSection()
 		m.cursor = 0
 	case "r":
 		if !m.fetching {
 			m.fetching = true
 			m.tickGen++
+			if m.ciEnabled() {
+				return m, tea.Batch(fetchCmd(m.runner, m.limit), ciFetchCmd(m.runner, m.ci))
+			}
 			return m, fetchCmd(m.runner, m.limit)
 		}
 	case "m":
-		if m.bucket == pr.Authored {
+		if m.section == secAuthored {
 			if p, ok := m.selected(); ok {
 				m.modal = modalMerge
 				m.modalPR = p // capture so a refetch can't swap the row under us
@@ -203,7 +237,7 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "c":
-		if m.bucket == pr.Authored {
+		if m.section == secAuthored {
 			if p, ok := m.selected(); ok {
 				m.modal = modalClose
 				m.modalPR = p
@@ -224,9 +258,9 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // reviewEligible reports whether the review launcher should act/show: under
-// cmux, in the Awaiting-my-review bucket, with a configured review.
+// cmux, in the Reviewing section, with a configured review.
 func (m *Model) reviewEligible() bool {
-	return inCmux() && m.bucket == pr.AwaitingReview && m.review.Enabled()
+	return inCmux() && m.section == secReviewing && m.review.Enabled()
 }
 
 func (m *Model) mergeBlockers() []string {

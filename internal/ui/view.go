@@ -293,9 +293,9 @@ func (m *Model) renderBody() (lines []string, cursorLine int) {
 			cursorLine = blockStart + 1 + anchor + len(prompt) // keep the row (and prompt) visible
 		}
 	}
-	appendBucket("AUTHORED", m.authored, m.bucket == pr.Authored)
+	appendBucket("AUTHORED", m.authored, m.section == secAuthored)
 	lines = append(lines, "") // separator between buckets
-	appendBucket("AWAITING MY REVIEW", m.reviewing, m.bucket == pr.AwaitingReview)
+	appendBucket("AWAITING MY REVIEW", m.reviewing, m.section == secReviewing)
 	return lines, cursorLine
 }
 

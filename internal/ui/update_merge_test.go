@@ -27,7 +27,7 @@ func TestMKeyOpensModalOnAuthored(t *testing.T) {
 func TestMKeyIgnoredOnReviewingBucket(t *testing.T) {
 	m := New(stubRunner{}, time.Second, 10)
 	m.reviewing = []pr.PR{mergeablePR()}
-	m.bucket = pr.AwaitingReview
+	m.section = secReviewing
 	m.Update(key("m"))
 	if m.modal != modalNone {
 		t.Error("m on the reviewing bucket should not open the modal")

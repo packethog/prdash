@@ -1,13 +1,31 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/packethog/prdash/internal/ci"
+	"github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/pr"
 )
+
+func testCIConfig(t *testing.T) config.CI {
+	t.Helper()
+	dir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(dir, "prdash"), 0o755)
+	body := "ci:\n  limit: 5\n  provider: claude\n  prompt: \"debug {{.URL}}\"\n  workflows:\n    - repo: a/b\n      workflow: w.yml\n      name: QA\n      summaryArtifact: qa-analysis-*\n"
+	_ = os.WriteFile(filepath.Join(dir, "prdash", "config.yaml"), []byte(body), 0o644)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	_, c, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
 
 func key(s string) tea.KeyMsg {
 	switch s {
@@ -41,14 +59,52 @@ func TestNavCursorClampsUp(t *testing.T) {
 	}
 }
 
-func TestNavTabSwitchesBucketAndResetsCursor(t *testing.T) {
+func TestNavTabSwitchesSectionAndResetsCursor(t *testing.T) {
 	m := New(stubRunner{}, time.Second, 10)
 	m.authored = []pr.PR{{Number: 1}, {Number: 2}}
 	m.reviewing = []pr.PR{{Number: 9}}
 	m.cursor = 1
 	m.Update(key("tab"))
-	if m.bucket != pr.AwaitingReview || m.cursor != 0 {
-		t.Errorf("after tab: bucket=%v cursor=%d", m.bucket, m.cursor)
+	if m.section != secReviewing || m.cursor != 0 {
+		t.Errorf("after tab: section=%v cursor=%d", m.section, m.cursor)
+	}
+}
+
+func TestTabRotatesThroughCIWhenEnabled(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
+	m.workflows = []ci.WorkflowRuns{{Name: "QA", Key: "w.yml", Repo: "a/b"}}
+	if m.section != secAuthored {
+		t.Fatal("start at authored")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.section != secReviewing {
+		t.Fatalf("after 1 tab: %v", m.section)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.section != secCI {
+		t.Fatalf("after 2 tabs: %v", m.section)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.section != secAuthored {
+		t.Fatalf("after 3 tabs: %v", m.section)
+	}
+}
+
+func TestTabSkipsCIWhenDisabled(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10) // no CI config
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.section != secAuthored {
+		t.Fatalf("should cycle only 2 sections, got %v", m.section)
+	}
+}
+
+func TestCIFetchedMsgUpdatesWorkflows(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
+	wfs := []ci.WorkflowRuns{{Name: "QA", Runs: []ci.Run{{RunID: 1}}}}
+	m.Update(ciFetchedMsg{workflows: wfs})
+	if len(m.workflows) != 1 || len(m.workflows[0].Runs) != 1 {
+		t.Fatalf("workflows not updated: %+v", m.workflows)
 	}
 }
 

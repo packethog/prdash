@@ -260,7 +260,7 @@ func TestViewWindowsLongListWithinHeight(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		m.authored = append(m.authored, pr.PR{Repo: "o/r", Number: i, Title: "t", ReviewDecision: "APPROVED", RollupState: "SUCCESS"})
 	}
-	m.bucket = pr.Authored
+	m.section = secAuthored
 	m.cursor = 27 // deep in the list
 	out := m.View()
 	if got := strings.Count(out, "\n") + 1; got > m.height {
@@ -397,7 +397,7 @@ func TestKeybarShowsReviewWhenEligible(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New(stubRunner{}, time.Second, 10, WithReview(r))
-	m.bucket = pr.AwaitingReview
+	m.section = secReviewing
 	m.width = 200
 	if !strings.Contains(m.View(), "v review") {
 		t.Error("keybar should show 'v review' when eligible")
@@ -411,7 +411,7 @@ func TestKeybarHidesReviewWhenNotEligible(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New(stubRunner{}, time.Second, 10, WithReview(r))
-	m.bucket = pr.Authored // wrong bucket
+	m.section = secAuthored // wrong section for review
 	m.width = 200
 	if strings.Contains(m.View(), "v review") {
 		t.Error("keybar must hide 'v review' in the Authored bucket")
