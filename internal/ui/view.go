@@ -590,7 +590,10 @@ func (m *Model) View() string {
 		}
 		var first int
 		visible, first = window(body, cursorLine, vp)
-		if vp > 0 && len(body) > vp {
+		// Suppress the scroll hint for the details modal: the body was
+		// pre-sliced by the scroll offset, so first+len(visible) would
+		// misreport the total count.
+		if vp > 0 && len(body) > vp && m.modal != modalDetails {
 			hint = dimStyle.Render(fmt.Sprintf("  %d–%d/%d", first+1, first+len(visible), len(body)))
 		}
 	}

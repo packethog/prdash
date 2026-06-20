@@ -97,12 +97,22 @@ func Load() (Review, CI, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// Check for the old TOML config; if present, prompt migration.
+			tomlPath := filepath.Join(filepath.Dir(path), "config.toml")
+			if _, terr := os.Stat(tomlPath); terr == nil {
+				return Review{}, CI{}, fmt.Errorf("config: found config.toml but prdash now uses config.yaml — please migrate")
+			}
 			return Review{}, CI{}, nil
 		}
 		return Review{}, CI{}, fmt.Errorf("config: %w", err)
 	}
 	var f fileSchema
-	if err := yaml.Unmarshal(data, &f); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&f); err != nil {
+		if errors.Is(err, io.EOF) { // empty file: no keys at all
+			return Review{}, CI{}, nil
+		}
 		return Review{}, CI{}, fmt.Errorf("config: %w", err)
 	}
 

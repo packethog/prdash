@@ -26,7 +26,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.fetching = true
 		if m.ciEnabled() {
-			return m, tea.Batch(fetchCmd(m.runner, m.limit), ciFetchCmd(m.runner, m.ci))
+			return m, tea.Batch(fetchCmd(m.runner, m.limit), m.ciFetch())
 		}
 		return m, fetchCmd(m.runner, m.limit)
 	case uiTickMsg:
@@ -37,6 +37,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchFailedMsg:
 		return m.onFetchFailed(msg)
 	case ciFetchedMsg:
+		if msg.gen != m.ciGen {
+			return m, nil // stale result from a superseded fetch; discard
+		}
 		m.workflows = msg.workflows
 		if m.section == secCI {
 			m.clampCursor()
@@ -210,12 +213,7 @@ func (m *Model) itemCount() int {
 }
 
 func (m *Model) clampCursor() {
-	var n int
-	if m.section == secCI {
-		n = len(m.ciItems())
-	} else {
-		n = len(m.rows())
-	}
+	n := m.itemCount()
 	if m.cursor >= n {
 		m.cursor = n - 1
 	}
@@ -263,7 +261,7 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.fetching = true
 			m.tickGen++
 			if m.ciEnabled() {
-				return m, tea.Batch(fetchCmd(m.runner, m.limit), ciFetchCmd(m.runner, m.ci))
+				return m, tea.Batch(fetchCmd(m.runner, m.limit), m.ciFetch())
 			}
 			return m, fetchCmd(m.runner, m.limit)
 		}

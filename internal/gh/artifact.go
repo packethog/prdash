@@ -16,6 +16,11 @@ import (
 // ErrNoArtifact is returned when no artifact name matches the configured glob.
 var ErrNoArtifact = errors.New("no matching artifact")
 
+// maxSummaryBytes caps how much of a single summary file we will read into
+// memory. Files larger than this are rejected to prevent a zip-bomb or
+// unexpectedly huge artifact from spiking the process RSS.
+const maxSummaryBytes = 5 << 20 // 5 MiB
+
 type artifactNode struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
@@ -84,12 +89,15 @@ func FetchRunSummary(ctx context.Context, r Runner, repo string, runID int64, ar
 		if fh.Name != fileName {
 			continue
 		}
+		if fh.UncompressedSize64 > maxSummaryBytes {
+			return nil, fmt.Errorf("summary file %s too large (%d bytes)", fileName, fh.UncompressedSize64)
+		}
 		rc, err := fh.Open()
 		if err != nil {
 			return nil, fmt.Errorf("open %s in artifact: %w", fileName, err)
 		}
 		defer func() { _ = rc.Close() }()
-		return io.ReadAll(rc)
+		return io.ReadAll(io.LimitReader(rc, maxSummaryBytes))
 	}
 	return nil, fmt.Errorf("%s not found in artifact %s", fileName, best.Name)
 }

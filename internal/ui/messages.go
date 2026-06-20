@@ -48,7 +48,10 @@ type tickMsg struct{ gen int }
 // when there is no user interaction or data fetch.
 type uiTickMsg struct{}
 
-type ciFetchedMsg struct{ workflows []ci.WorkflowRuns }
+type ciFetchedMsg struct {
+	gen       int
+	workflows []ci.WorkflowRuns
+}
 
 type runDetailMsg struct {
 	runID int64 // correlation: ignore if it doesn't match the open modal's run
@@ -127,9 +130,11 @@ func uiTickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg { return uiTickMsg{} })
 }
 
-// ciFetchCmd fetches all configured workflows concurrently. Per-workflow errors
-// are carried on each WorkflowRuns.Err so one bad workflow degrades only its row.
-func ciFetchCmd(r gh.Runner, c config.CI) tea.Cmd {
+// ciFetchCmd fetches all configured workflows concurrently. gen is a generation
+// counter: the handler drops the result if a newer fetch has already been
+// dispatched (stale-result guard). Per-workflow errors are carried on each
+// WorkflowRuns.Err so one bad workflow degrades only its row.
+func ciFetchCmd(r gh.Runner, c config.CI, gen int) tea.Cmd {
 	return func() tea.Msg {
 		wfs := make([]ci.WorkflowRuns, len(c.Workflows))
 		var wg sync.WaitGroup
@@ -155,7 +160,7 @@ func ciFetchCmd(r gh.Runner, c config.CI) tea.Cmd {
 			}(i, w)
 		}
 		wg.Wait()
-		return ciFetchedMsg{workflows: wfs}
+		return ciFetchedMsg{gen: gen, workflows: wfs}
 	}
 }
 

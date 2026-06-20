@@ -58,6 +58,7 @@ type Model struct {
 	lastErr     error
 	fetching    bool
 	tickGen     int
+	ciGen       int
 
 	modal          modalState
 	modalPR        pr.PR // PR captured when a modal opened (immune to refetch)
@@ -125,9 +126,18 @@ func New(r gh.Runner, interval time.Duration, limit int, opts ...Option) *Model 
 func (m *Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{fetchCmd(m.runner, m.limit), uiTickCmd()}
 	if m.ciEnabled() {
-		cmds = append(cmds, ciFetchCmd(m.runner, m.ci))
+		m.ciGen++
+		cmds = append(cmds, ciFetchCmd(m.runner, m.ci, m.ciGen))
 	}
 	return tea.Batch(cmds...)
+}
+
+// ciFetch increments the CI generation counter and returns a ciFetchCmd for
+// the new generation. Use at all CI-fetch dispatch sites to ensure stale
+// in-flight results are discarded.
+func (m *Model) ciFetch() tea.Cmd {
+	m.ciGen++
+	return ciFetchCmd(m.runner, m.ci, m.ciGen)
 }
 
 // setToast shows a transient status message, stamping it so the UI tick can

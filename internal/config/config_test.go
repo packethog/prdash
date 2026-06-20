@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/packethog/prdash/internal/pr"
@@ -141,6 +142,70 @@ func TestLoadMalformedYAMLIsDisabledWithError(t *testing.T) {
 	}
 	if r.Enabled() {
 		t.Error("malformed YAML should be disabled")
+	}
+}
+
+// TestLoadUnknownKeyIsError verifies that a misspelled key (which KnownFields
+// would silently ignore with plain yaml.Unmarshal) is now rejected.
+func TestLoadUnknownKeyIsError(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	// "boguskey" is not in fileSchema — strict decoding must reject it.
+	writeConfig(t, dir, "boguskey: oops\n")
+	_, _, err := Load()
+	if err == nil {
+		t.Fatal("expected error for unknown YAML key")
+	}
+}
+
+// TestLoadUnknownWorkflowKeyIsError verifies that a misspelled field inside a
+// workflow entry (e.g. "summaryartifact" instead of "summaryArtifact") is
+// caught by strict decoding.
+func TestLoadUnknownWorkflowKeyIsError(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	body := "ci:\n  workflows:\n    - repo: a/b\n      workflow: w.yml\n      summaryartifact: oops\n"
+	writeConfig(t, dir, body)
+	_, _, err := Load()
+	if err == nil {
+		t.Fatal("expected error for misspelled workflow key summaryartifact")
+	}
+}
+
+// TestLoadEmptyFileIsDisabledNoError verifies that an empty file (io.EOF from
+// the decoder) is treated as disabled+no-error, not as a decode failure.
+func TestLoadEmptyFileIsDisabledNoError(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, "")
+	r, c, err := Load()
+	if err != nil {
+		t.Fatalf("empty file should not error: %v", err)
+	}
+	if r.Enabled() || c.Enabled() {
+		t.Error("empty file should yield disabled features")
+	}
+}
+
+// TestLoadTOMLWarning verifies that when config.yaml is absent but config.toml
+// exists in the same directory, Load returns an actionable migration error.
+func TestLoadTOMLWarning(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	// Create the prdash subdir and a config.toml (no config.yaml).
+	pdir := filepath.Join(dir, "prdash")
+	if err := os.MkdirAll(pdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pdir, "config.toml"), []byte("[review]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := Load()
+	if err == nil {
+		t.Fatal("expected migration error when config.toml exists but config.yaml does not")
+	}
+	if !strings.Contains(err.Error(), "config.toml") {
+		t.Errorf("error should mention config.toml, got: %v", err)
 	}
 }
 
