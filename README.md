@@ -250,3 +250,14 @@ Each entry under `ci.workflows` accepts:
 | `limit` | no | override `ci.limit` for this workflow only |
 | `summaryArtifact` | no | artifact name or glob (e.g. `qa-analysis-*`) to fetch the analysis from |
 | `summaryFile` | no | file to read inside the artifact (defaults to `analysis.txt`) |
+
+### Parsing and migration notes
+
+- The config is parsed strictly: an **unknown or misspelled key** (e.g.
+  `summaryartifact` instead of `summaryArtifact`) makes the whole file fail to
+  parse, so prdash prints the error to stderr and starts as a read-only
+  dashboard. A structurally valid file with an invalid `review` block disables
+  only the review launcher, and an invalid `ci` block disables only CI.
+- prdash now reads `config.yaml`; the old `config.toml` is no longer used. If a
+  `config.toml` exists but `config.yaml` does not, prdash prints a one-line
+  notice to migrate and runs with both features disabled until you convert it.
