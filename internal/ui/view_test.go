@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"github.com/packethog/prdash/internal/ci"
 	"github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/pr"
 )
@@ -378,6 +379,17 @@ func TestInlinePromptFollowsCapturedPRAfterReorder(t *testing.T) {
 	}
 	if sel < 0 || sel+1 >= len(lines) || !strings.Contains(lines[sel+1], "close this PR?") {
 		t.Fatal("prompt must follow the captured PR (#1) after a reorder, not the cursor row")
+	}
+}
+
+func TestViewRendersCISection(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
+	m.width, m.height = 100, 40
+	m.workflows = []ci.WorkflowRuns{{Name: "QA mainnet-beta", Branch: "main", Key: "w.yml", Repo: "a/b",
+		Runs: []ci.Run{{Status: "completed", Conclusion: "success"}, {Status: "completed", Conclusion: "failure"}}}}
+	out := m.View()
+	if !strings.Contains(out, "CI Workflows") || !strings.Contains(out, "QA mainnet-beta") {
+		t.Errorf("CI section not rendered:\n%s", out)
 	}
 }
 

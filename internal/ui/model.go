@@ -198,9 +198,6 @@ func (m *Model) ciItems() []ciItem {
 }
 
 // selectedCIItem returns the ci item under the cursor when CI is focused.
-// Used by Task 9 (CI section rendering and key handling).
-//
-//nolint:unused
 func (m *Model) selectedCIItem() (ciItem, bool) {
 	if m.section != secCI {
 		return ciItem{}, false
@@ -213,7 +210,7 @@ func (m *Model) selectedCIItem() (ciItem, bool) {
 }
 
 // selectedRun returns the run under the cursor, if the cursor is on a run row.
-// Used by Task 9 (CI section key handling).
+// Used by Task 10 (CI run details modal).
 //
 //nolint:unused
 func (m *Model) selectedRun() (ci.Run, bool) {

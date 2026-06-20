@@ -253,6 +253,18 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, reviewCmd(m.cmux, m.review, p)
 			}
 		}
+	case "enter":
+		if m.section == secCI {
+			if it, ok := m.selectedCIItem(); ok {
+				switch it.kind {
+				case ciHeader:
+					key := wfKey(m.workflows[it.wf])
+					m.expanded[key] = !m.expanded[key]
+				case ciRun:
+					// details modal — implemented in Task 10
+				}
+			}
+		}
 	}
 	return m, nil
 }

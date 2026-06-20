@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/packethog/prdash/internal/ci"
 	"github.com/packethog/prdash/internal/pr"
 )
 
@@ -42,6 +43,47 @@ func reviewStyle(r pr.ReviewState) lipgloss.Style {
 	default:
 		return staleStyle
 	}
+}
+
+func ciRunStyle(s ci.RunStatus) lipgloss.Style {
+	switch s {
+	case ci.RunSuccess:
+		return liveStyle
+	case ci.RunFailure:
+		return offlineStyle
+	case ci.RunQueued, ci.RunInProgress:
+		return staleStyle
+	default:
+		return dimStyle
+	}
+}
+
+// sparkline renders up to the configured run glyphs, colored by status.
+func sparkline(runs []ci.Run) string {
+	parts := make([]string, 0, len(runs))
+	for _, r := range runs {
+		st := ci.Status(r)
+		parts = append(parts, ciRunStyle(st).Render(st.Symbol()))
+	}
+	return strings.Join(parts, " ")
+}
+
+// sparklinePlain is the uncolored glyph run used for measuring/selection.
+func sparklinePlain(runs []ci.Run) string {
+	parts := make([]string, 0, len(runs))
+	for _, r := range runs {
+		parts = append(parts, ci.Status(r).Symbol())
+	}
+	return strings.Join(parts, " ")
+}
+
+// padToWidth right-pads an already-styled string (whose visible width is known)
+// to w cells, so ANSI escapes aren't counted by ansi.StringWidth twice.
+func padToWidth(styled string, visibleW, w int) string {
+	if pad := w - visibleW; pad > 0 {
+		return styled + strings.Repeat(" ", pad)
+	}
+	return styled
 }
 
 func ciStyle(c pr.CIState) lipgloss.Style {
@@ -81,6 +123,18 @@ const (
 	colReviewW = 17 // widest review label: "Changes requested"
 	colCIW     = 2  // CI column: "CI" header + 1-cell badge
 	colGap     = 1
+)
+
+// CI-section column widths for the collapsed workflow rows.
+const (
+	ciNameW   = 26 // WORKFLOW
+	ciBranchW = 8  // BRANCH
+	ciSparkW  = 14 // LAST-N column width (cells)
+	// ciSparkMax caps how many run glyphs the collapsed sparkline shows so the
+	// column stays aligned regardless of the configured limit (N glyphs joined by
+	// spaces = 2N-1 cells; 7 → 13 cells, within ciSparkW). Expand a workflow (↵)
+	// to see every run.
+	ciSparkMax = 7
 )
 
 // padTo truncates s to w cells, then right-pads with spaces to exactly w cells,
@@ -296,6 +350,96 @@ func (m *Model) renderBody() (lines []string, cursorLine int) {
 	appendBucket("AUTHORED", m.authored, m.section == secAuthored)
 	lines = append(lines, "") // separator between buckets
 	appendBucket("AWAITING MY REVIEW", m.reviewing, m.section == secReviewing)
+
+	if m.ciEnabled() {
+		lines = append(lines, "") // separator before CI
+		ciStart := len(lines)
+		ciLines, ciCursor := m.renderCI()
+		lines = append(lines, ciLines...)
+		if m.section == secCI && ciCursor >= 0 {
+			cursorLine = ciStart + ciCursor
+		}
+	}
+	return lines, cursorLine
+}
+
+// renderCI builds the CI Workflows section lines and the index (within those
+// lines) of the active cursor item, or -1 when CI is not focused.
+func (m *Model) renderCI() (lines []string, cursorLine int) {
+	cursorLine = -1
+	lines = append(lines, sectionStyle.Render("CI Workflows"))
+	// column header, dimmed, aligned to the collapsed columns
+	hdr := padTo("WORKFLOW", ciNameW+colGap) + padTo("BRANCH", ciBranchW+colGap) +
+		padTo("LAST", ciSparkW+colGap) + "UPDATED"
+	lines = append(lines, dimStyle.Render(hdr))
+	if len(m.workflows) == 0 {
+		lines = append(lines, dimStyle.Render("  (none)"))
+		return lines, cursorLine
+	}
+	items := m.ciItems()
+	itemLine := make([]int, len(items))
+	ii := 0
+
+	appendRow := func(plain, colored string) {
+		idx := ii
+		itemLine[idx] = len(lines)
+		if m.section == secCI && m.cursor == idx {
+			line := plain
+			if m.width > 0 {
+				line = padTo(plain, m.width)
+			}
+			lines = append(lines, selectedStyle.Render(line))
+		} else {
+			lines = append(lines, colored)
+		}
+		ii++
+	}
+
+	for wi := range m.workflows {
+		w := m.workflows[wi]
+		expanded := m.expanded[wfKey(w)]
+		marker := "▸"
+		if expanded {
+			marker = "▾"
+		}
+		name := padTo(marker+" "+w.Name, ciNameW+colGap)
+		branch := padTo(w.Branch, ciBranchW+colGap)
+		switch {
+		case expanded:
+			// expanded header: name + branch only
+			appendRow(name+branch, name+dimStyle.Render(branch))
+		case w.Err != nil:
+			appendRow(name+branch+"error", name+dimStyle.Render(branch)+offlineStyle.Render("error"))
+		default:
+			updated := ""
+			if len(w.Runs) > 0 {
+				updated = humanizeSince(m.now().Sub(w.Runs[0].UpdatedAt)) + " ago"
+			}
+			runs := w.Runs // newest-first; cap glyphs so the column stays aligned
+			if len(runs) > ciSparkMax {
+				runs = runs[:ciSparkMax]
+			}
+			plainSpark := padTo(sparklinePlain(runs), ciSparkW+colGap)
+			colorSpark := padToWidth(sparkline(runs), ansi.StringWidth(sparklinePlain(runs)), ciSparkW+colGap)
+			appendRow(name+branch+plainSpark+updated,
+				name+dimStyle.Render(branch)+colorSpark+dimStyle.Render(updated))
+		}
+		if expanded {
+			for ri := range w.Runs {
+				r := w.Runs[ri]
+				st := ci.Status(r)
+				glyphPlain := st.Symbol()
+				num := fmt.Sprintf(" #%d", r.RunNumber)
+				rest := fmt.Sprintf("   %s   %s", st.Label(), humanizeSince(m.now().Sub(r.UpdatedAt))+" ago")
+				plain := "     " + glyphPlain + num + rest
+				colored := "     " + ciRunStyle(st).Render(glyphPlain) + num + rest
+				appendRow(plain, colored)
+			}
+		}
+	}
+	if m.section == secCI && m.cursor >= 0 && m.cursor < len(items) {
+		cursorLine = itemLine[m.cursor]
+	}
 	return lines, cursorLine
 }
 
