@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"runtime"
 
 	"github.com/packethog/prdash/internal/pr"
 )
@@ -61,4 +62,32 @@ func Open(ctx context.Context, r Runner, p pr.PR) error {
 func Close(ctx context.Context, r Runner, p pr.PR) error {
 	_, err := r.Run(ctx, "pr", "close", p.URL)
 	return err
+}
+
+// osOpenArgs returns the platform command to open a URL in the default browser.
+func osOpenArgs(url string) (bin string, args []string) {
+	switch runtime.GOOS {
+	case "darwin":
+		return "open", []string{url}
+	case "windows":
+		return "rundll32", []string{"url.dll,FileProtocolHandler", url}
+	default:
+		return "xdg-open", []string{url}
+	}
+}
+
+// OpenURL opens an arbitrary URL in a browser: a cmux browser pane inside cmux,
+// else the OS default opener. Unlike Open (PRs), it never uses `gh pr view --web`
+// (which only accepts PR refs).
+func OpenURL(ctx context.Context, _ Runner, url string) error {
+	if os.Getenv("CMUX_WORKSPACE_ID") != "" {
+		bin, args := openArgs(true, url)
+		if err := exec.CommandContext(ctx, bin, args...).Run(); err == nil {
+			return nil
+		} else if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+	bin, args := osOpenArgs(url)
+	return exec.CommandContext(ctx, bin, args...).Run()
 }
