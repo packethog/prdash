@@ -27,6 +27,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fetching = true
 		return m, fetchCmd(m.runner, m.limit)
 	case uiTickMsg:
+		m.expireToast()
 		return m, uiTickCmd()
 	case prsFetchedMsg:
 		return m.onFetched(msg)
@@ -34,7 +35,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onFetchFailed(msg)
 	case mergeDoneMsg:
 		m.merging = false
-		m.toast = "Merged " + msg.p.Ref()
+		m.setToast("Merged " + msg.p.Ref())
 		m.markActioned(msg.p.URL)
 		if !m.fetching {
 			m.fetching = true
@@ -45,11 +46,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case mergeFailedMsg:
 		m.merging = false
-		m.toast = "Merge failed: " + msg.err.Error()
+		m.setToast("Merge failed: " + msg.err.Error())
 		return m, nil
 	case closeDoneMsg:
 		m.closing = false
-		m.toast = "Closed " + msg.p.Ref()
+		m.setToast("Closed " + msg.p.Ref())
 		m.markActioned(msg.p.URL)
 		if !m.fetching {
 			m.fetching = true
@@ -60,18 +61,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case closeFailedMsg:
 		m.closing = false
-		m.toast = "Close failed: " + msg.err.Error()
+		m.setToast("Close failed: " + msg.err.Error())
 		return m, nil
 	case openedMsg:
 		if msg.err != nil {
-			m.toast = "Open failed: " + msg.err.Error()
+			m.setToast("Open failed: " + msg.err.Error())
 		}
 		return m, nil
 	case reviewLaunchedMsg:
 		if msg.err != nil {
-			m.toast = "Review failed: " + msg.err.Error()
+			m.setToast("Review failed: " + msg.err.Error())
 		} else {
-			m.toast = "Review started for " + msg.p.Ref()
+			m.setToast("Review started for " + msg.p.Ref())
 		}
 		return m, nil
 	case tea.KeyMsg:
