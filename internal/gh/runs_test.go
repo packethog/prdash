@@ -62,3 +62,44 @@ func equalArgs(a, b []string) bool {
 	}
 	return true
 }
+
+func TestFetchRunDetail(t *testing.T) {
+	out := `{
+	  "status":"completed","conclusion":"failure","headBranch":"main","number":4820,
+	  "url":"https://x/4820","createdAt":"2026-06-20T16:00:00Z","updatedAt":"2026-06-20T16:12:00Z",
+	  "jobs":[
+	    {"name":"qa","status":"completed","conclusion":"success","steps":[{"name":"build","status":"completed","conclusion":"success"}]},
+	    {"name":"analyze","status":"completed","conclusion":"failure","steps":[
+	      {"name":"setup","status":"completed","conclusion":"success"},
+	      {"name":"run suite","status":"completed","conclusion":"failure"}]}
+	  ]
+	}`
+	f := &fakeRunner{out: []byte(out)}
+	d, err := FetchRunDetail(context.Background(), f, "malbeclabs/infra", 4820)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Conclusion != "failure" || d.Number != 4820 || len(d.Jobs) != 2 {
+		t.Errorf("decode wrong: %+v", d)
+	}
+	job, step, ok := d.FailedStep()
+	if !ok || job != "analyze" || step != "run suite" {
+		t.Errorf("FailedStep = %q %q %v", job, step, ok)
+	}
+	want := []string{"run", "view", "4820", "-R", "malbeclabs/infra", "--json",
+		"status,conclusion,headBranch,number,url,createdAt,updatedAt,jobs"}
+	if !equalArgs(f.gotArgs[0], want) {
+		t.Errorf("args = %v want %v", f.gotArgs[0], want)
+	}
+}
+
+func TestRerunFailedArgs(t *testing.T) {
+	f := &fakeRunner{}
+	if err := RerunFailed(context.Background(), f, "malbeclabs/infra", 4820); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"run", "rerun", "4820", "-R", "malbeclabs/infra", "--failed"}
+	if !equalArgs(f.gotArgs[0], want) {
+		t.Errorf("args = %v want %v", f.gotArgs[0], want)
+	}
+}

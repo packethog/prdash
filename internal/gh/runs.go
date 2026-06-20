@@ -10,6 +10,103 @@ import (
 	"github.com/packethog/prdash/internal/ci"
 )
 
+// RunDetail is structured run metadata for the details modal.
+type RunDetail struct {
+	Status     string
+	Conclusion string
+	HeadBranch string
+	Number     int
+	URL        string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	Jobs       []JobDetail
+}
+
+// JobDetail holds per-job metadata within a RunDetail.
+type JobDetail struct {
+	Name       string
+	Status     string
+	Conclusion string
+	Steps      []StepDetail
+}
+
+// StepDetail holds per-step metadata within a JobDetail.
+type StepDetail struct {
+	Name       string
+	Status     string
+	Conclusion string
+}
+
+type runViewJSON struct {
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	HeadBranch string `json:"headBranch"`
+	Number     int    `json:"number"`
+	URL        string `json:"url"`
+	CreatedAt  string `json:"createdAt"`
+	UpdatedAt  string `json:"updatedAt"`
+	Jobs       []struct {
+		Name       string `json:"name"`
+		Status     string `json:"status"`
+		Conclusion string `json:"conclusion"`
+		Steps      []struct {
+			Name       string `json:"name"`
+			Status     string `json:"status"`
+			Conclusion string `json:"conclusion"`
+		} `json:"steps"`
+	} `json:"jobs"`
+}
+
+const runViewFields = "status,conclusion,headBranch,number,url,createdAt,updatedAt,jobs"
+
+// FetchRunDetail fetches structured run metadata via `gh run view --json`.
+func FetchRunDetail(ctx context.Context, r Runner, repo string, runID int64) (RunDetail, error) {
+	out, err := r.Run(ctx, "run", "view", strconv.FormatInt(runID, 10), "-R", repo, "--json", runViewFields)
+	if err != nil {
+		return RunDetail{}, err
+	}
+	var v runViewJSON
+	if err := json.Unmarshal(out, &v); err != nil {
+		return RunDetail{}, fmt.Errorf("decode run view: %w", err)
+	}
+	created, _ := time.Parse(time.RFC3339, v.CreatedAt)
+	updated, _ := time.Parse(time.RFC3339, v.UpdatedAt)
+	d := RunDetail{
+		Status: v.Status, Conclusion: v.Conclusion, HeadBranch: v.HeadBranch,
+		Number: v.Number, URL: v.URL, CreatedAt: created, UpdatedAt: updated,
+	}
+	for _, j := range v.Jobs {
+		jd := JobDetail{Name: j.Name, Status: j.Status, Conclusion: j.Conclusion}
+		for _, s := range j.Steps {
+			jd.Steps = append(jd.Steps, StepDetail{Name: s.Name, Status: s.Status, Conclusion: s.Conclusion})
+		}
+		d.Jobs = append(d.Jobs, jd)
+	}
+	return d, nil
+}
+
+// FailedStep returns the first failed job and step, if any.
+func (d RunDetail) FailedStep() (job, step string, ok bool) {
+	for _, j := range d.Jobs {
+		if j.Conclusion != "failure" {
+			continue
+		}
+		for _, s := range j.Steps {
+			if s.Conclusion == "failure" {
+				return j.Name, s.Name, true
+			}
+		}
+		return j.Name, "", true
+	}
+	return "", "", false
+}
+
+// RerunFailed re-runs only the failed jobs of a run via `gh run rerun --failed`.
+func RerunFailed(ctx context.Context, r Runner, repo string, runID int64) error {
+	_, err := r.Run(ctx, "run", "rerun", strconv.FormatInt(runID, 10), "-R", repo, "--failed")
+	return err
+}
+
 type runNode struct {
 	DatabaseID int64  `json:"databaseId"`
 	Number     int    `json:"number"`
