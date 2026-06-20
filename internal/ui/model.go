@@ -26,6 +26,10 @@ const (
 	modalClose
 )
 
+// toastTTL is how long a transient status toast stays on screen before the 1s
+// UI tick clears it.
+const toastTTL = 6 * time.Second
+
 // Model is the Bubble Tea model for prdash.
 type Model struct {
 	runner  gh.Runner
@@ -51,6 +55,7 @@ type Model struct {
 	closing        bool
 	pendingRefresh bool
 	toast          string
+	toastAt        time.Time       // when the current toast was set; it expires after toastTTL
 	actioned       map[string]bool // URLs of PRs closed/merged this session, struck until the refetch drops them
 
 	review config.Review // review-launcher config (disabled when unset)
@@ -88,6 +93,20 @@ func New(r gh.Runner, interval time.Duration, limit int, opts ...Option) *Model 
 // Init kicks off the first fetch and starts the 1s UI heartbeat.
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(fetchCmd(m.runner, m.limit), uiTickCmd())
+}
+
+// setToast shows a transient status message, stamping it so the UI tick can
+// expire it after toastTTL (otherwise a toast would linger indefinitely).
+func (m *Model) setToast(s string) {
+	m.toast = s
+	m.toastAt = m.now()
+}
+
+// expireToast clears the toast once it has been on screen for toastTTL.
+func (m *Model) expireToast() {
+	if m.toast != "" && m.now().Sub(m.toastAt) >= toastTTL {
+		m.toast = ""
+	}
 }
 
 // rows returns the PR slice for the active bucket.
