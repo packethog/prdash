@@ -76,8 +76,8 @@ prdash --limit 25      # fetch up to 25 PRs per bucket (min 1)
 | `o` | open selected PR or CI run in browser |
 | `v` | review selected with Claude/Codex (awaiting-review bucket, cmux only, when configured) |
 | `d` | PR buckets: debug dispatch for the selected PR **when its CI has failed** (Authored bucket, cmux only, when `prDebug` configured); CI section: debug dispatch for the selected run (cmux only, when `ci.provider`/`ci.prompt` configured) |
+| `R` | Authored PR bucket: rerun all failing CI jobs for the selected PR **when its CI has failed** (opens confirm; not cmux-gated); CI section: rerun failed jobs for the selected run (opens confirm) |
 | `↵` / `space` | CI: expand/collapse a workflow header; open/close a run's inline details |
-| `R` | CI: rerun failed jobs (failed run selected or in details; opens confirm) |
 | `q` | quit (when no modal is open) |
 | `ctrl+c` | quit (always, even with a modal/details open) |
 
@@ -128,6 +128,28 @@ only when the selected PR has a failing CI status; the key does nothing otherwis
 Both conditions must hold: running inside cmux **and** `prDebug` must be configured.
 This is distinct from the CI section's `d` key, which acts on a selected workflow
 run (not a PR).
+
+### PR CI rerun (Authored bucket)
+
+Pressing `R` on a PR in the **Authored** bucket whose **CI has failed** (`✗`)
+opens an inline confirmation prompt. Confirming reruns only the failing jobs
+(`gh run rerun --failed`) of every Actions run on the PR's **head commit** that
+completed with a failure, timed-out, or startup-failure conclusion. The key does
+nothing when the selected PR has any other CI status.
+
+Unlike the `d` debug key, `R` is not cmux-gated — it works in any terminal.
+
+The `R rerun` hint in the keys line appears only when the selected Authored PR
+has a failing CI status, keeping the hint line uncluttered otherwise.
+
+After all matching runs are requeued, prdash toasts with the count
+(`Reran N run(s) for owner/repo#N`). If no runs matched the head commit,
+the toast says `No failed workflow runs for …`. If rerunning fails partway
+through, the toast reports how many runs were already requeued before the error.
+
+This is distinct from the **CI Workflows** section's `R` key, which reruns the
+single selected workflow run. The Authored-bucket `R` works across all runs tied
+to the PR's current head commit, regardless of workflow.
 
 ### CI Workflows section
 
