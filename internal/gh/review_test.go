@@ -75,3 +75,25 @@ func TestStartReviewPropagatesSpawnError(t *testing.T) {
 		t.Fatal("expected error when new-pane fails")
 	}
 }
+
+func TestStartCIDebug(t *testing.T) {
+	f := &fakeRunner{out: []byte("OK surface:7 pane:3 workspace:1\n")}
+	err := StartCIDebug(context.Background(), f, "claude", []string{"--permission-mode", "auto"}, "debug it")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.gotArgs) != 3 {
+		t.Fatalf("want 3 cmux calls, got %d: %v", len(f.gotArgs), f.gotArgs)
+	}
+	if strings.Join(f.gotArgs[0], " ") != "new-pane --type terminal --direction down --focus true" {
+		t.Errorf("call 0 = %v", f.gotArgs[0])
+	}
+	send := f.gotArgs[1]
+	cmd := send[len(send)-1]
+	if cmd != `'claude' '--permission-mode' 'auto' 'debug it'` {
+		t.Errorf("command = %q", cmd)
+	}
+	if strings.Join(f.gotArgs[2], " ") != "send-key --surface surface:7 enter" {
+		t.Errorf("call 2 = %v", f.gotArgs[2])
+	}
+}

@@ -51,12 +51,9 @@ func reviewCommand(provider string, args []string, prompt string) string {
 	return strings.Join(parts, " ")
 }
 
-// StartReview opens a new terminal pane and runs `<provider> <args...> '<prompt>'`
-// in it: new-pane (capture the terminal's surface ref) -> send the command ->
-// send-key enter to run it. args are provider flags (e.g. --permission-mode auto)
-// inserted before the prompt. prdash does no cloning, review, or GitHub posting
-// itself — the spawned command does all of that.
-func StartReview(ctx context.Context, cmux Runner, provider string, args []string, prompt string) error {
+// startInPane opens a new terminal pane and types+runs command in it via the
+// cmux new-pane → send → send-key enter dance.
+func startInPane(ctx context.Context, cmux Runner, command string) error {
 	out, err := cmux.Run(ctx, paneArgs()...)
 	if err != nil {
 		return err
@@ -65,7 +62,6 @@ func StartReview(ctx context.Context, cmux Runner, provider string, args []strin
 	if err != nil {
 		return err
 	}
-	command := reviewCommand(provider, args, prompt)
 	if _, err := cmux.Run(ctx, sendArgs(ref, command)...); err != nil {
 		return err
 	}
@@ -73,4 +69,19 @@ func StartReview(ctx context.Context, cmux Runner, provider string, args []strin
 		return err
 	}
 	return nil
+}
+
+// StartReview opens a new terminal pane and runs `<provider> <args...> '<prompt>'`
+// in it: new-pane (capture the terminal's surface ref) -> send the command ->
+// send-key enter to run it. args are provider flags (e.g. --permission-mode auto)
+// inserted before the prompt. prdash does no cloning, review, or GitHub posting
+// itself — the spawned command does all of that.
+func StartReview(ctx context.Context, cmux Runner, provider string, args []string, prompt string) error {
+	return startInPane(ctx, cmux, reviewCommand(provider, args, prompt))
+}
+
+// StartCIDebug spawns the configured provider in a new cmux pane to debug a
+// failed CI run. Identical mechanism to StartReview.
+func StartCIDebug(ctx context.Context, cmux Runner, provider string, args []string, prompt string) error {
+	return startInPane(ctx, cmux, reviewCommand(provider, args, prompt))
 }

@@ -71,7 +71,7 @@ func TestCKeyOpensCloseModalOnAuthored(t *testing.T) {
 func TestCKeyIgnoredOnReviewingBucket(t *testing.T) {
 	m := New(stubRunner{}, time.Second, 10)
 	m.reviewing = []pr.PR{authoredPR()}
-	m.bucket = pr.AwaitingReview
+	m.section = secReviewing
 	m.Update(key("c"))
 	if m.modal != modalNone {
 		t.Error("c on the reviewing bucket should not open the close modal")

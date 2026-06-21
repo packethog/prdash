@@ -3,11 +3,11 @@ module github.com/packethog/prdash
 go 1.24.0
 
 require (
-	github.com/BurntSushi/toml v1.4.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.10.1
 	github.com/muesli/termenv v0.16.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

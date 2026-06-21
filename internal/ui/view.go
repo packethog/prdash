@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/packethog/prdash/internal/ci"
+	"github.com/packethog/prdash/internal/gh"
 	"github.com/packethog/prdash/internal/pr"
 )
 
@@ -42,6 +45,47 @@ func reviewStyle(r pr.ReviewState) lipgloss.Style {
 	default:
 		return staleStyle
 	}
+}
+
+func ciRunStyle(s ci.RunStatus) lipgloss.Style {
+	switch s {
+	case ci.RunSuccess:
+		return liveStyle
+	case ci.RunFailure:
+		return offlineStyle
+	case ci.RunQueued, ci.RunInProgress:
+		return staleStyle
+	default:
+		return dimStyle
+	}
+}
+
+// sparkline renders up to the configured run glyphs, colored by status.
+func sparkline(runs []ci.Run) string {
+	parts := make([]string, 0, len(runs))
+	for _, r := range runs {
+		st := ci.Status(r)
+		parts = append(parts, ciRunStyle(st).Render(st.Symbol()))
+	}
+	return strings.Join(parts, " ")
+}
+
+// sparklinePlain is the uncolored glyph run used for measuring/selection.
+func sparklinePlain(runs []ci.Run) string {
+	parts := make([]string, 0, len(runs))
+	for _, r := range runs {
+		parts = append(parts, ci.Status(r).Symbol())
+	}
+	return strings.Join(parts, " ")
+}
+
+// padToWidth right-pads an already-styled string (whose visible width is known)
+// to w cells, so ANSI escapes aren't counted by ansi.StringWidth twice.
+func padToWidth(styled string, visibleW, w int) string {
+	if pad := w - visibleW; pad > 0 {
+		return styled + strings.Repeat(" ", pad)
+	}
+	return styled
 }
 
 func ciStyle(c pr.CIState) lipgloss.Style {
@@ -82,6 +126,30 @@ const (
 	colCIW     = 2  // CI column: "CI" header + 1-cell badge
 	colGap     = 1
 )
+
+// CI-section fixed column widths. The LAST column width is computed dynamically
+// in renderCI so the sparkline fits every run (see ciSparkWidth).
+const (
+	ciNameW    = 26 // WORKFLOW
+	ciBranchW  = 8  // BRANCH
+	ciSparkGap = 3  // spaces between the LAST column and UPDATED (wider than colGap)
+)
+
+// ciSparkWidth returns the LAST-column width (cells) needed to show every run's
+// status glyph across all workflows, so the column scales with the run count and
+// never truncates the sparkline. N glyphs joined by single spaces = 2N-1 cells;
+// floored at len("LAST") so the header always fits.
+func (m *Model) ciSparkWidth() int {
+	w := ansi.StringWidth("LAST")
+	for wi := range m.workflows {
+		if n := len(m.workflows[wi].Runs); n > 0 {
+			if cells := 2*n - 1; cells > w {
+				w = cells
+			}
+		}
+	}
+	return w
+}
 
 // padTo truncates s to w cells, then right-pads with spaces to exactly w cells,
 // so every column occupies a fixed visible width regardless of wide characters.
@@ -293,10 +361,165 @@ func (m *Model) renderBody() (lines []string, cursorLine int) {
 			cursorLine = blockStart + 1 + anchor + len(prompt) // keep the row (and prompt) visible
 		}
 	}
-	appendBucket("AUTHORED", m.authored, m.bucket == pr.Authored)
+	appendBucket("AUTHORED", m.authored, m.section == secAuthored)
 	lines = append(lines, "") // separator between buckets
-	appendBucket("AWAITING MY REVIEW", m.reviewing, m.bucket == pr.AwaitingReview)
+	appendBucket("AWAITING MY REVIEW", m.reviewing, m.section == secReviewing)
+
+	if m.ciEnabled() {
+		lines = append(lines, "") // separator before CI
+		ciStart := len(lines)
+		ciLines, ciCursor := m.renderCI()
+		lines = append(lines, ciLines...)
+		if m.section == secCI && ciCursor >= 0 {
+			cursorLine = ciStart + ciCursor
+		}
+	}
 	return lines, cursorLine
+}
+
+// renderCI builds the CI Workflows section lines and the index (within those
+// lines) of the active cursor item, or -1 when CI is not focused.
+func (m *Model) renderCI() (lines []string, cursorLine int) {
+	cursorLine = -1
+	sparkW := m.ciSparkWidth() // LAST column scales to the run count
+	lines = append(lines, sectionStyle.Render("CI Workflows"))
+	// column header, dimmed, aligned to the collapsed columns
+	hdr := padTo("WORKFLOW", ciNameW+colGap) + padTo("BRANCH", ciBranchW+colGap) +
+		padTo("LAST", sparkW+ciSparkGap) + "UPDATED"
+	lines = append(lines, dimStyle.Render(hdr))
+	if len(m.workflows) == 0 {
+		lines = append(lines, dimStyle.Render("  (none)"))
+		return lines, cursorLine
+	}
+	items := m.ciItems()
+	itemLine := make([]int, len(items))
+	ii := 0
+
+	appendRow := func(plain, colored string) {
+		idx := ii
+		itemLine[idx] = len(lines)
+		if m.section == secCI && m.cursor == idx {
+			line := plain
+			if m.width > 0 {
+				line = padTo(plain, m.width)
+			}
+			lines = append(lines, selectedStyle.Render(line))
+		} else {
+			lines = append(lines, colored)
+		}
+		ii++
+	}
+
+	for wi := range m.workflows {
+		w := m.workflows[wi]
+		expanded := m.expanded[wfKey(w)]
+		marker := "▸"
+		if expanded {
+			marker = "▾"
+		}
+		name := padTo(marker+" "+w.Name, ciNameW+colGap)
+		// Branch is shown per run row, not on the workflow header; keep an empty
+		// BRANCH cell on the header so the LAST/UPDATED columns stay aligned.
+		blankBranch := padTo("", ciBranchW+colGap)
+		switch {
+		case expanded:
+			// expanded header: just the workflow name
+			appendRow(name, name)
+		case w.Err != nil:
+			appendRow(name+blankBranch+"error", name+blankBranch+offlineStyle.Render("error"))
+		default:
+			updated := ""
+			if len(w.Runs) > 0 {
+				updated = humanizeSince(m.now().Sub(w.Runs[0].UpdatedAt)) + " ago"
+			}
+			runs := w.Runs // newest-first; the LAST column scales to fit them all
+			plainSpark := padTo(sparklinePlain(runs), sparkW+ciSparkGap)
+			colorSpark := padToWidth(sparkline(runs), ansi.StringWidth(sparklinePlain(runs)), sparkW+ciSparkGap)
+			appendRow(name+blankBranch+plainSpark+updated,
+				name+blankBranch+colorSpark+dimStyle.Render(updated))
+		}
+		if expanded {
+			for ri := range w.Runs {
+				r := w.Runs[ri]
+				st := ci.Status(r)
+				// Columns aligned under the header: #number (WORKFLOW), branch
+				// (BRANCH), status glyph (LAST), "<updated> ago (<runtime>)" (UPDATED).
+				num := padTo(fmt.Sprintf("    #%d", r.RunNumber), ciNameW+colGap)
+				rbranch := padTo(r.Branch, ciBranchW+colGap)
+				glyphPlain := padTo(st.Symbol(), sparkW+ciSparkGap)
+				glyphColored := padToWidth(ciRunStyle(st).Render(st.Symbol()), ansi.StringWidth(st.Symbol()), sparkW+ciSparkGap)
+				upd := ""
+				if !r.UpdatedAt.IsZero() {
+					upd = humanizeSince(m.now().Sub(r.UpdatedAt)) + " ago"
+				}
+				if !r.CreatedAt.IsZero() && r.UpdatedAt.After(r.CreatedAt) {
+					upd += " (" + humanizeSince(r.UpdatedAt.Sub(r.CreatedAt)) + ")"
+				}
+				appendRow(num+rbranch+glyphPlain+upd,
+					num+dimStyle.Render(rbranch)+glyphColored+dimStyle.Render(upd))
+				// Inline details panel under the selected run while it's open.
+				if m.modal == modalDetails && r.RunID == m.detailRun.RunID {
+					lines = append(lines, m.ciDetailLines()...)
+				}
+			}
+		}
+	}
+	if m.section == secCI && m.cursor >= 0 && m.cursor < len(items) {
+		cursorLine = itemLine[m.cursor]
+	}
+	if m.modal == modalRerun {
+		lines = append(lines, promptStyle.Render(fmt.Sprintf("   ↳ rerun failed jobs of #%d?   ⏎ rerun   esc cancel", m.rerunRun.RunNumber)))
+	}
+	return lines, cursorLine
+}
+
+// ciDetailLines builds the inline details panel rendered beneath the selected
+// run row (status/branch/runtime already live on the row itself, so this adds the
+// job breakdown, the failed step, and the analysis summary or its fallback).
+func (m *Model) ciDetailLines() []string {
+	const ind = "       " // align under the run row's content
+	var b []string
+	if m.detailErr != nil {
+		return append(b, ind+offlineStyle.Render("failed to load details: "+m.detailErr.Error()))
+	}
+	if m.detail.Status == "" { // FetchRunDetail not back yet
+		b = append(b, ind+dimStyle.Render("loading details…"))
+	}
+	if len(m.detail.Jobs) > 0 {
+		b = append(b, ind+dimStyle.Render("jobs:"))
+		for _, j := range m.detail.Jobs {
+			b = append(b, ind+"  "+jobGlyph(j)+" "+j.Name)
+		}
+	}
+	if job, step, ok := m.detail.FailedStep(); ok {
+		label := job
+		if step != "" {
+			label += " · " + step
+		}
+		b = append(b, ind+dimStyle.Render("failed step: ")+offlineStyle.Render(label))
+	}
+	switch {
+	case m.summary != "":
+		for _, ln := range strings.Split(strings.TrimRight(m.summary, "\n"), "\n") {
+			b = append(b, ind+ln)
+		}
+	case m.summaryErr != nil && errors.Is(m.summaryErr, gh.ErrNoArtifact):
+		b = append(b, ind+dimStyle.Render("no analysis artifact — press o to open the run page"))
+	case m.summaryErr != nil:
+		b = append(b, ind+dimStyle.Render("could not load analysis: "+m.summaryErr.Error()))
+	case m.detailGlob != "":
+		b = append(b, ind+dimStyle.Render("loading analysis…"))
+	default:
+		b = append(b, ind+dimStyle.Render("press o to open the run page"))
+	}
+	return b
+}
+
+// jobGlyph maps a job's status/conclusion to a colored status glyph (reusing the
+// run status mapping).
+func jobGlyph(j gh.JobDetail) string {
+	st := ci.Status(ci.Run{Status: j.Status, Conclusion: j.Conclusion})
+	return ciRunStyle(st).Render(st.Symbol())
 }
 
 // promptLines is the inline confirm shown beneath the selected row while a
@@ -347,6 +570,8 @@ func (m *Model) clampLine(s string) string {
 // trailing newline, so the total line count is exactly len(top)+len(visible)+
 // len(footer) and never exceeds m.height.
 func (m *Model) View() string {
+	// The details panel renders inline beneath its run (see renderCI), so the
+	// rest of the dashboard stays visible — View renders the body normally.
 	body, cursorLine := m.renderBody()
 
 	var visible []string
@@ -369,11 +594,32 @@ func (m *Model) View() string {
 	if m.toast != "" {
 		status += "   " + m.toast
 	}
-	keyText := "↑↓ move  tab switch  r refresh  m merge  c close  o open"
-	if m.reviewEligible() {
-		keyText += "  v review"
+	keyText := "↑↓ move  tab switch  r refresh"
+	switch {
+	case m.modal == modalDetails:
+		keyText = "↵/esc close  o open run page"
+		if m.ciDebugEligible() {
+			keyText += "  d debug"
+		}
+		if ci.IsFailed(m.detailRun) {
+			keyText += "  R rerun"
+		}
+	case m.section == secCI:
+		keyText += "  ↵ details/expand  o open"
+		if m.ciDebugEligible() {
+			keyText += "  d debug"
+		}
+		if r, ok := m.selectedRun(); ok && ci.IsFailed(r) {
+			keyText += "  R rerun"
+		}
+		keyText += "  q quit"
+	default:
+		keyText += "  m merge  c close  o open"
+		if m.reviewEligible() {
+			keyText += "  v review"
+		}
+		keyText += "  q quit"
 	}
-	keyText += "  q quit"
 	keys := dimStyle.Render(keyText) + hint
 
 	all := []string{titleStyle.Render("prdash"), ""}

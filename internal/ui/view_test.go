@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"github.com/packethog/prdash/internal/ci"
 	"github.com/packethog/prdash/internal/config"
 	"github.com/packethog/prdash/internal/pr"
 )
@@ -260,7 +261,7 @@ func TestViewWindowsLongListWithinHeight(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		m.authored = append(m.authored, pr.PR{Repo: "o/r", Number: i, Title: "t", ReviewDecision: "APPROVED", RollupState: "SUCCESS"})
 	}
-	m.bucket = pr.Authored
+	m.section = secAuthored
 	m.cursor = 27 // deep in the list
 	out := m.View()
 	if got := strings.Count(out, "\n") + 1; got > m.height {
@@ -381,6 +382,17 @@ func TestInlinePromptFollowsCapturedPRAfterReorder(t *testing.T) {
 	}
 }
 
+func TestViewRendersCISection(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
+	m.width, m.height = 100, 40
+	m.workflows = []ci.WorkflowRuns{{Name: "QA mainnet-beta", Branch: "main", Key: "w.yml", Repo: "a/b",
+		Runs: []ci.Run{{Status: "completed", Conclusion: "success"}, {Status: "completed", Conclusion: "failure"}}}}
+	out := m.View()
+	if !strings.Contains(out, "CI Workflows") || !strings.Contains(out, "QA mainnet-beta") {
+		t.Errorf("CI section not rendered:\n%s", out)
+	}
+}
+
 func TestFooterShowsCloseKey(t *testing.T) {
 	m := New(stubRunner{}, 45*time.Second, 50)
 	m.width, m.height = 80, 24
@@ -397,7 +409,7 @@ func TestKeybarShowsReviewWhenEligible(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New(stubRunner{}, time.Second, 10, WithReview(r))
-	m.bucket = pr.AwaitingReview
+	m.section = secReviewing
 	m.width = 200
 	if !strings.Contains(m.View(), "v review") {
 		t.Error("keybar should show 'v review' when eligible")
@@ -411,7 +423,7 @@ func TestKeybarHidesReviewWhenNotEligible(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New(stubRunner{}, time.Second, 10, WithReview(r))
-	m.bucket = pr.Authored // wrong bucket
+	m.section = secAuthored // wrong section for review
 	m.width = 200
 	if strings.Contains(m.View(), "v review") {
 		t.Error("keybar must hide 'v review' in the Authored bucket")
