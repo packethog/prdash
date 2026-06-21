@@ -6,9 +6,35 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/packethog/prdash/internal/ci"
 )
+
+// A long analysis line wraps to the terminal width instead of being truncated:
+// every rendered line fits the width AND the trailing content is preserved.
+func TestSummaryWrapsToWidth(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
+	m.width, m.height = 40, 40
+	m.section = secCI
+	m.workflows = []ci.WorkflowRuns{{Name: "QA", Key: "w.yml", Repo: "a/b", Runs: []ci.Run{
+		{RunID: 9, RunNumber: 9, Status: "completed", Conclusion: "failure"},
+	}}}
+	m.expanded["a/b w.yml"] = true
+	m.cursor = 1
+	m.modal = modalDetails
+	m.detailRun = m.workflows[0].Runs[0]
+	m.summary = "This is a very long analysis line that definitely exceeds forty columns and must wrap across several rows instead of running off the edge."
+	out := m.View()
+	for _, ln := range strings.Split(out, "\n") {
+		if ansi.StringWidth(ln) > m.width {
+			t.Errorf("line exceeds width %d (w=%d): %q", m.width, ansi.StringWidth(ln), ln)
+		}
+	}
+	if !strings.Contains(out, "edge.") { // trailing content survived (not truncated)
+		t.Errorf("summary tail truncated rather than wrapped:\n%s", out)
+	}
+}
 
 // Expanded run rows align under the columns: #number, branch, status glyph, and
 // "<updated> ago (<runtime>)" — no status word, and branch lives on the run row.

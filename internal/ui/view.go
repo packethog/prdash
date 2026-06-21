@@ -500,8 +500,17 @@ func (m *Model) ciDetailLines() []string {
 	}
 	switch {
 	case m.summary != "":
+		// Word-wrap the analysis to the width left after the indent so long lines
+		// don't run off the terminal (View truncates, it doesn't wrap).
+		wrapW := m.width - ansi.StringWidth(ind)
 		for _, ln := range strings.Split(strings.TrimRight(m.summary, "\n"), "\n") {
-			b = append(b, ind+ln)
+			if wrapW <= 0 {
+				b = append(b, ind+ln)
+				continue
+			}
+			for _, wl := range strings.Split(ansi.Wrap(ln, wrapW, ""), "\n") {
+				b = append(b, ind+wl)
+			}
 		}
 	case m.summaryErr != nil && errors.Is(m.summaryErr, gh.ErrNoArtifact):
 		b = append(b, ind+dimStyle.Render("no analysis artifact — press o to open the run page"))
