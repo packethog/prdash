@@ -87,6 +87,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast("Review started for " + msg.p.Ref())
 		}
 		return m, nil
+	case prDebugLaunchedMsg:
+		if msg.err != nil {
+			m.setToast("Debug failed: " + msg.err.Error())
+		} else {
+			m.setToast("Debug started for " + msg.p.Ref())
+		}
+		return m, nil
 	case runDetailMsg:
 		if m.modal == modalDetails && msg.runID == m.detailRun.RunID {
 			m.detail, m.detailErr = msg.d, msg.err
@@ -302,9 +309,15 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "d":
-		if m.section == secCI && m.ciDebugEligible() {
-			if r, ok := m.selectedRun(); ok {
-				return m, ciDebugCmd(m.cmux, m.ci, r)
+		if m.section == secCI {
+			if m.ciDebugEligible() {
+				if r, ok := m.selectedRun(); ok {
+					return m, ciDebugCmd(m.cmux, m.ci, r)
+				}
+			}
+		} else if m.prDebugEligible() {
+			if p, ok := m.selected(); ok && pr.CI(p) == pr.CIFailure {
+				return m, prDebugCmd(m.cmux, m.prDebug, p)
 			}
 		}
 	case "R":
@@ -361,6 +374,12 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // cmux, in the Reviewing section, with a configured review.
 func (m *Model) reviewEligible() bool {
 	return inCmux() && m.section == secReviewing && m.review.Enabled()
+}
+
+// prDebugEligible reports whether the PR debug launcher should act/show: under
+// cmux, in the Authored section, with a configured prDebug.
+func (m *Model) prDebugEligible() bool {
+	return inCmux() && m.section == secAuthored && m.prDebug.Enabled()
 }
 
 func (m *Model) ciDebugEligible() bool {

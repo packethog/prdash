@@ -70,8 +70,9 @@ type Model struct {
 	toastAt        time.Time       // when the current toast was set; it expires after toastTTL
 	actioned       map[string]bool // URLs of PRs closed/merged this session, struck until the refetch drops them
 
-	review config.Review // review-launcher config (disabled when unset)
-	cmux   gh.Runner     // runner targeting the cmux binary
+	review  config.Review  // review-launcher config (disabled when unset)
+	prDebug config.PRDebug // pr ci-failure debug-launcher config (disabled when unset)
+	cmux    gh.Runner      // runner targeting the cmux binary
 
 	ci        config.CI
 	workflows []ci.WorkflowRuns
@@ -99,6 +100,9 @@ func WithReview(r config.Review) Option { return func(m *Model) { m.review = r }
 
 // WithCI sets the CI-workflows config.
 func WithCI(c config.CI) Option { return func(m *Model) { m.ci = c } }
+
+// WithPRDebug sets the PR CI-failure debug-launcher config.
+func WithPRDebug(d config.PRDebug) Option { return func(m *Model) { m.prDebug = d } }
 
 // New builds a Model. interval is the normal auto-refresh cadence; limit caps
 // PRs fetched per bucket.

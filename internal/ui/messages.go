@@ -42,6 +42,10 @@ type reviewLaunchedMsg struct {
 	p   pr.PR
 	err error
 }
+type prDebugLaunchedMsg struct {
+	p   pr.PR
+	err error
+}
 type tickMsg struct{ gen int }
 
 // uiTickMsg fires once per second to keep relative-time displays advancing even
@@ -119,6 +123,18 @@ func reviewCmd(cmux gh.Runner, rv config.Review, p pr.PR) tea.Cmd {
 			return reviewLaunchedMsg{p: p, err: err}
 		}
 		return reviewLaunchedMsg{p: p, err: gh.StartReview(ctx, cmux, rv.Provider, rv.Args, prompt)}
+	}
+}
+
+func prDebugCmd(cmux gh.Runner, d config.PRDebug, p pr.PR) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		prompt, err := d.Render(p)
+		if err != nil {
+			return prDebugLaunchedMsg{p: p, err: err}
+		}
+		return prDebugLaunchedMsg{p: p, err: gh.StartAgent(ctx, cmux, d.Provider, d.Args, prompt)}
 	}
 }
 
