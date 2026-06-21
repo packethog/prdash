@@ -47,6 +47,7 @@ type prNode struct {
 	Commits          struct {
 		Nodes []struct {
 			Commit struct {
+				Oid               string `json:"oid"`
 				StatusCheckRollup *struct {
 					State string `json:"state"`
 				} `json:"statusCheckRollup"`
@@ -66,9 +67,12 @@ type prNode struct {
 }
 
 func (n prNode) toPR() pr.PR {
-	var rollup string
-	if len(n.Commits.Nodes) > 0 && n.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
-		rollup = n.Commits.Nodes[0].Commit.StatusCheckRollup.State
+	var rollup, headSHA string
+	if len(n.Commits.Nodes) > 0 {
+		headSHA = n.Commits.Nodes[0].Commit.Oid
+		if n.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
+			rollup = n.Commits.Nodes[0].Commit.StatusCheckRollup.State
+		}
 	}
 	t, _ := time.Parse(time.RFC3339, n.UpdatedAt)
 	var reviews []string
@@ -85,6 +89,7 @@ func (n prNode) toPR() pr.PR {
 		Title:              n.Title,
 		URL:                n.URL,
 		HeadRefName:        n.HeadRefName,
+		HeadSHA:            headSHA,
 		IsDraft:            n.IsDraft,
 		UpdatedAt:          t,
 		ReviewDecision:     n.ReviewDecision,

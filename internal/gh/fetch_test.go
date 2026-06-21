@@ -113,6 +113,31 @@ func TestFetchDecodesLatestReviews(t *testing.T) {
 // TestFetchDecodesOpinionatedReviews covers the latestOpinionatedReviews wiring:
 // an approval that GitHub surfaces only there (latestReviews empty) must reach
 // the PR so the badge can read it.
+func TestFetchDecodesHeadSHA(t *testing.T) {
+	out := `{"data":{"authored":{"nodes":[
+	  {"number":7,"title":"t","url":"u","isDraft":false,"updatedAt":"2026-06-21T00:00:00Z",
+	   "repository":{"nameWithOwner":"o/r"},"reviewDecision":"","mergeable":"MERGEABLE",
+	   "mergeStateStatus":"CLEAN","headRefName":"feat",
+	   "commits":{"nodes":[{"commit":{"oid":"abc123","statusCheckRollup":{"state":"FAILURE"}}}]},
+	   "latestReviews":{"nodes":[]},"latestOpinionatedReviews":{"nodes":[]}}
+	]},"reviewing":{"nodes":[]}}}`
+	res, err := Fetch(context.Background(), &fakeRunner{out: []byte(out)}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Authored) != 1 || res.Authored[0].HeadSHA != "abc123" {
+		t.Fatalf("HeadSHA not decoded: %+v", res.Authored)
+	}
+}
+
+// Guards that the GraphQL query actually requests the commit oid (the decode test
+// alone would pass even if the query forgot to ask for it).
+func TestSearchQueryRequestsOid(t *testing.T) {
+	if !strings.Contains(searchQuery, "oid") {
+		t.Error("searchQuery must request the commit oid")
+	}
+}
+
 func TestFetchDecodesOpinionatedReviews(t *testing.T) {
 	body := `{"data":{"authored":{"nodes":[]},"reviewing":{"nodes":[
 		{"number":112,"url":"https://github.com/o/r/pull/112","repository":{"nameWithOwner":"o/r"},

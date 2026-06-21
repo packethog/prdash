@@ -99,6 +99,7 @@ type PR struct {
 	Title            string
 	URL              string
 	HeadRefName      string
+	HeadSHA          string // head commit oid (for matching workflow runs)
 	IsDraft          bool
 	UpdatedAt        time.Time
 	ReviewDecision   string   // "", "REVIEW_REQUIRED", "CHANGES_REQUESTED", "APPROVED"
