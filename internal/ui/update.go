@@ -238,6 +238,20 @@ func (m *Model) nextSection() section {
 	}
 }
 
+func (m *Model) prevSection() section {
+	switch m.section {
+	case secAuthored:
+		if m.ciEnabled() {
+			return secCI
+		}
+		return secReviewing
+	case secCI:
+		return secReviewing
+	default: // secReviewing
+		return secAuthored
+	}
+}
+
 func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.modal != modalNone {
 		return m.onModalKey(msg)
@@ -255,6 +269,9 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "tab":
 		m.section = m.nextSection()
+		m.cursor = 0
+	case "shift+tab":
+		m.section = m.prevSection()
 		m.cursor = 0
 	case "r":
 		if !m.fetching {

@@ -38,6 +38,24 @@ func TestExpandedRunRowLayout(t *testing.T) {
 	}
 }
 
+// shift+tab rotates sections in reverse (Authored → CI → Awaiting → Authored).
+func TestShiftTabRotatesSectionsBackwards(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
+	m.workflows = []ci.WorkflowRuns{{Name: "QA", Key: "w.yml", Repo: "a/b"}}
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.section != secCI {
+		t.Fatalf("after 1 shift+tab: %v, want secCI", m.section)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.section != secReviewing {
+		t.Fatalf("after 2 shift+tab: %v, want secReviewing", m.section)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.section != secAuthored {
+		t.Fatalf("after 3 shift+tab: %v, want secAuthored", m.section)
+	}
+}
+
 // The LAST column scales to the run count: all status glyphs render and the
 // UPDATED time still follows (no truncation) even past the old 7-glyph cap.
 func TestSparklineScalesToRunCount(t *testing.T) {

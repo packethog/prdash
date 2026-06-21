@@ -69,7 +69,7 @@ prdash --limit 25      # fetch up to 25 PRs per bucket (min 1)
 | Key | Action |
 |-----|--------|
 | `↑`/`k`, `↓`/`j` | move cursor |
-| `tab` | rotate section (Authored → Awaiting my review → CI Workflows) |
+| `tab` / `shift+tab` | rotate section forward / backward (Authored ↔ Awaiting my review ↔ CI Workflows) |
 | `r` | refresh now |
 | `m` | merge selected (authored only; opens confirm) |
 | `c` | close selected (authored only; opens confirm) |
