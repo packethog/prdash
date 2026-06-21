@@ -71,17 +71,23 @@ func startInPane(ctx context.Context, cmux Runner, command string) error {
 	return nil
 }
 
+// StartAgent opens a new terminal pane and runs `<provider> <args...> '<prompt>'`
+// in it. It is the generic dispatcher behind StartReview and StartCIDebug.
+func StartAgent(ctx context.Context, cmux Runner, provider string, args []string, prompt string) error {
+	return startInPane(ctx, cmux, reviewCommand(provider, args, prompt))
+}
+
 // StartReview opens a new terminal pane and runs `<provider> <args...> '<prompt>'`
 // in it: new-pane (capture the terminal's surface ref) -> send the command ->
 // send-key enter to run it. args are provider flags (e.g. --permission-mode auto)
 // inserted before the prompt. prdash does no cloning, review, or GitHub posting
 // itself — the spawned command does all of that.
 func StartReview(ctx context.Context, cmux Runner, provider string, args []string, prompt string) error {
-	return startInPane(ctx, cmux, reviewCommand(provider, args, prompt))
+	return StartAgent(ctx, cmux, provider, args, prompt)
 }
 
 // StartCIDebug spawns the configured provider in a new cmux pane to debug a
 // failed CI run. Identical mechanism to StartReview.
 func StartCIDebug(ctx context.Context, cmux Runner, provider string, args []string, prompt string) error {
-	return startInPane(ctx, cmux, reviewCommand(provider, args, prompt))
+	return StartAgent(ctx, cmux, provider, args, prompt)
 }

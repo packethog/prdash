@@ -76,6 +76,20 @@ func TestStartReviewPropagatesSpawnError(t *testing.T) {
 	}
 }
 
+func TestStartAgent(t *testing.T) {
+	f := &fakeRunner{out: []byte("OK surface:7 pane:3 workspace:1")}
+	if err := StartAgent(context.Background(), f, "claude", []string{"--permission-mode", "auto"}, "debug it"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.gotArgs) != 3 {
+		t.Fatalf("want 3 cmux calls, got %d", len(f.gotArgs))
+	}
+	send := f.gotArgs[1]
+	if cmd := send[len(send)-1]; cmd != `'claude' '--permission-mode' 'auto' 'debug it'` {
+		t.Errorf("command = %q", cmd)
+	}
+}
+
 func TestStartCIDebug(t *testing.T) {
 	f := &fakeRunner{out: []byte("OK surface:7 pane:3 workspace:1\n")}
 	err := StartCIDebug(context.Background(), f, "claude", []string{"--permission-mode", "auto"}, "debug it")
