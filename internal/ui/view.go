@@ -627,6 +627,11 @@ func (m *Model) View() string {
 		if m.reviewEligible() {
 			keyText += "  v review"
 		}
+		if m.prDebugEligible() {
+			if p, ok := m.selected(); ok && pr.CI(p) == pr.CIFailure {
+				keyText += "  d debug"
+			}
+		}
 		keyText += "  q quit"
 	}
 	keys := dimStyle.Render(keyText) + hint

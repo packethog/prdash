@@ -38,6 +38,11 @@ type fileSchema struct {
 		Prompt    string     `yaml:"prompt"`
 		Workflows []wfSchema `yaml:"workflows"`
 	} `yaml:"ci"`
+	PRDebug struct {
+		Provider string   `yaml:"provider"`
+		Args     []string `yaml:"args"`
+		Prompt   string   `yaml:"prompt"`
+	} `yaml:"prDebug"`
 }
 
 type wfSchema struct {
@@ -52,22 +57,44 @@ type wfSchema struct {
 
 func validProvider(p string) bool { return p == "claude" || p == "codex" }
 
-// Parse validates provider and compiles the prompt template.
-func Parse(provider, prompt string) (Review, error) {
+// compilePRPrompt validates the provider and compiles+dry-runs a PR prompt
+// template. label prefixes error messages (e.g. "review", "prDebug").
+func compilePRPrompt(label, provider, prompt string) (*template.Template, error) {
 	if !validProvider(provider) {
-		return Review{}, fmt.Errorf("review.provider %q must be \"claude\" or \"codex\"", provider)
+		return nil, fmt.Errorf("%s.provider %q must be \"claude\" or \"codex\"", label, provider)
 	}
 	if prompt == "" {
-		return Review{}, errors.New("review.prompt is empty")
+		return nil, fmt.Errorf("%s.prompt is empty", label)
 	}
-	tmpl, err := template.New("review").Option("missingkey=error").Parse(prompt)
+	tmpl, err := template.New(label).Option("missingkey=error").Parse(prompt)
 	if err != nil {
-		return Review{}, fmt.Errorf("review.prompt template: %w", err)
+		return nil, fmt.Errorf("%s.prompt template: %w", label, err)
 	}
-	// Reject prompts that reference unknown fields now (executed against zero
-	// data), so an invalid prompt is disabled at load time, not at first keypress.
 	if err := tmpl.Execute(io.Discard, tmplData{}); err != nil {
-		return Review{}, fmt.Errorf("review.prompt template: %w", err)
+		return nil, fmt.Errorf("%s.prompt template: %w", label, err)
+	}
+	return tmpl, nil
+}
+
+// renderPRPrompt executes a compiled PR prompt template against a PR.
+func renderPRPrompt(tmpl *template.Template, p pr.PR) (string, error) {
+	if tmpl == nil {
+		return "", errors.New("not configured")
+	}
+	var b bytes.Buffer
+	if err := tmpl.Execute(&b, tmplData{
+		URL: p.URL, Repo: p.Repo, Title: p.Title, Branch: p.HeadRefName, Number: p.Number,
+	}); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+// Parse validates provider and compiles the review prompt template.
+func Parse(provider, prompt string) (Review, error) {
+	tmpl, err := compilePRPrompt("review", provider, prompt)
+	if err != nil {
+		return Review{}, err
 	}
 	return Review{Provider: provider, Prompt: prompt, tmpl: tmpl}, nil
 }
@@ -87,12 +114,12 @@ func configPath() (string, error) {
 // Load reads the config from the XDG config path. A missing file yields disabled
 // features and no error. A present-but-invalid section (bad YAML, unknown
 // provider, etc.) disables only that feature and returns a non-nil error so the
-// caller can print a one-line note; prdash still starts. Both errors are joined
-// via errors.Join so both nil → nil.
-func Load() (Review, CI, error) {
+// caller can print a one-line note; prdash still starts. All errors are joined
+// via errors.Join so all nil → nil.
+func Load() (Review, CI, PRDebug, error) {
 	path, err := configPath()
 	if err != nil {
-		return Review{}, CI{}, nil // cannot resolve a config location → treat as no config
+		return Review{}, CI{}, PRDebug{}, nil // cannot resolve a config location → treat as no config
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -100,20 +127,20 @@ func Load() (Review, CI, error) {
 			// Check for the old TOML config; if present, prompt migration.
 			tomlPath := filepath.Join(filepath.Dir(path), "config.toml")
 			if _, terr := os.Stat(tomlPath); terr == nil {
-				return Review{}, CI{}, fmt.Errorf("config: found config.toml but prdash now uses config.yaml — please migrate")
+				return Review{}, CI{}, PRDebug{}, fmt.Errorf("config: found config.toml but prdash now uses config.yaml — please migrate")
 			}
-			return Review{}, CI{}, nil
+			return Review{}, CI{}, PRDebug{}, nil
 		}
-		return Review{}, CI{}, fmt.Errorf("config: %w", err)
+		return Review{}, CI{}, PRDebug{}, fmt.Errorf("config: %w", err)
 	}
 	var f fileSchema
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(&f); err != nil {
 		if errors.Is(err, io.EOF) { // empty file: no keys at all
-			return Review{}, CI{}, nil
+			return Review{}, CI{}, PRDebug{}, nil
 		}
-		return Review{}, CI{}, fmt.Errorf("config: %w", err)
+		return Review{}, CI{}, PRDebug{}, fmt.Errorf("config: %w", err)
 	}
 
 	var rev Review
@@ -142,7 +169,19 @@ func Load() (Review, CI, error) {
 		}
 	}
 
-	return rev, c, errors.Join(revErr, ciErr)
+	var prd PRDebug
+	var prdErr error
+	if f.PRDebug.Provider != "" || f.PRDebug.Prompt != "" {
+		prd, prdErr = ParsePRDebug(f.PRDebug.Provider, f.PRDebug.Prompt)
+		if prdErr == nil {
+			prd.Args = f.PRDebug.Args
+		} else {
+			prd = PRDebug{}
+			prdErr = fmt.Errorf("config: %w", prdErr)
+		}
+	}
+
+	return rev, c, prd, errors.Join(revErr, ciErr, prdErr)
 }
 
 // Enabled reports whether a valid review config was loaded.
@@ -156,19 +195,33 @@ type tmplData struct {
 	Number int
 }
 
-// Render executes the prompt template against the selected PR.
+// Render executes the review prompt template against the selected PR.
 func (r Review) Render(p pr.PR) (string, error) {
-	if r.tmpl == nil {
-		return "", errors.New("review not configured")
-	}
-	var b bytes.Buffer
-	if err := r.tmpl.Execute(&b, tmplData{
-		URL: p.URL, Repo: p.Repo, Title: p.Title, Branch: p.HeadRefName, Number: p.Number,
-	}); err != nil {
-		return "", err
-	}
-	return b.String(), nil
+	return renderPRPrompt(r.tmpl, p)
 }
+
+// PRDebug is the parsed, validated PR CI-failure debug-launcher config. The zero
+// value is disabled (Enabled reports false).
+type PRDebug struct {
+	Provider string
+	Args     []string
+	Prompt   string
+	tmpl     *template.Template
+}
+
+// ParsePRDebug validates provider and compiles the prDebug prompt template.
+func ParsePRDebug(provider, prompt string) (PRDebug, error) {
+	tmpl, err := compilePRPrompt("prDebug", provider, prompt)
+	if err != nil {
+		return PRDebug{}, err
+	}
+	return PRDebug{Provider: provider, Prompt: prompt, tmpl: tmpl}, nil
+}
+
+func (d PRDebug) Enabled() bool { return d.tmpl != nil && validProvider(d.Provider) }
+
+// Render executes the prDebug prompt template against the selected PR.
+func (d PRDebug) Render(p pr.PR) (string, error) { return renderPRPrompt(d.tmpl, p) }
 
 // CI is the parsed CI-workflows config. The zero value is disabled.
 type CI struct {

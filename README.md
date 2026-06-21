@@ -75,8 +75,8 @@ prdash --limit 25      # fetch up to 25 PRs per bucket (min 1)
 | `c` | close selected (authored only; opens confirm) |
 | `o` | open selected PR or CI run in browser |
 | `v` | review selected with Claude/Codex (awaiting-review bucket, cmux only, when configured) |
+| `d` | PR buckets: debug dispatch for the selected PR **when its CI has failed** (Authored bucket, cmux only, when `prDebug` configured); CI section: debug dispatch for the selected run (cmux only, when `ci.provider`/`ci.prompt` configured) |
 | `↵` / `space` | CI: expand/collapse a workflow header; open/close a run's inline details |
-| `d` | CI: debug dispatch (CI section, cmux only, when configured; acts on the selected run) |
 | `R` | CI: rerun failed jobs (failed run selected or in details; opens confirm) |
 | `q` | quit (when no modal is open) |
 | `ctrl+c` | quit (always, even with a modal/details open) |
@@ -117,6 +117,17 @@ Inside [cmux](https://github.com/manaflow-ai/cmux), pressing `v` on a PR in the
 CLI (Claude or Codex) with the prompt, the PR's fields substituted in. prdash
 only launches the pane and the command — the prompt defines what the agent does
 (review, post comments, etc.).
+
+### PR debug launcher (cmux only)
+
+Inside [cmux](https://github.com/manaflow-ai/cmux), pressing `d` on a PR in the
+**Authored** bucket whose **CI has failed** (`✗`) opens a new terminal pane below
+and runs `<provider> <args…> '<prompt>'` — launching your configured debug agent
+with the PR's fields substituted in. The `d debug` hint in the keys line appears
+only when the selected PR has a failing CI status; the key does nothing otherwise.
+Both conditions must hold: running inside cmux **and** `prDebug` must be configured.
+This is distinct from the CI section's `d` key, which acts on a selected workflow
+run (not a PR).
 
 ### CI Workflows section
 
@@ -194,6 +205,13 @@ review:
   args: ["--permission-mode", "auto"]  # optional flags before the prompt
   prompt: "Run the consensus-pr-review skill on {{.URL}}."
 
+prDebug:
+  provider: claude                      # "claude" | "codex"
+  args: ["--permission-mode", "auto"]  # optional flags before the prompt
+  prompt: |
+    Debug PR {{.URL}} ({{.Repo}}#{{.Number}} — {{.Title}}, branch {{.Branch}}).
+    CI is failing. Investigate the failure and propose a fix.
+
 ci:
   limit: 5                 # default last-N runs per workflow (default 5; no upper bound)
   provider: claude         # debug-dispatch provider: "claude" or "codex"
@@ -222,6 +240,23 @@ ci:
   `["--permission-mode", "auto"]` starts it in auto-approval mode.
 - `prompt` — a Go `text/template`. Available fields: `{{.URL}}`, `{{.Repo}}`,
   `{{.Number}}`, `{{.Title}}`, `{{.Branch}}`. Each part is shell-quoted.
+
+### `prDebug` fields
+
+`prDebug` is optional and independent of `review` and `ci` — a bad or absent
+`prDebug` block disables only the PR debug launcher; prdash always starts.
+
+- `provider` — `"claude"` or `"codex"`.
+- `args` — optional flags passed before the prompt.
+- `prompt` — a Go `text/template`. Available fields:
+
+  | Field | Description |
+  |-------|-------------|
+  | `{{.URL}}` | PR HTML URL |
+  | `{{.Repo}}` | `owner/name` of the repository |
+  | `{{.Number}}` | PR number (integer) |
+  | `{{.Title}}` | PR title |
+  | `{{.Branch}}` | head branch name |
 
 ### `ci` fields
 
@@ -265,7 +300,9 @@ Each entry under `ci.workflows` accepts:
   `summaryartifact` instead of `summaryArtifact`) makes the whole file fail to
   parse, so prdash prints the error to stderr and starts as a read-only
   dashboard. A structurally valid file with an invalid `review` block disables
-  only the review launcher, and an invalid `ci` block disables only CI.
+  only the review launcher, an invalid `ci` block disables only CI, and an
+  invalid `prDebug` block disables only the PR debug launcher — each section
+  fails independently.
 - prdash now reads `config.yaml`; the old `config.toml` is no longer used. If a
   `config.toml` exists but `config.yaml` does not, prdash prints a one-line
   notice to migrate and runs with both features disabled until you convert it.
