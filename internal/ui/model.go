@@ -27,6 +27,7 @@ const (
 	modalClose
 	modalRerun
 	modalDetails
+	modalPRRerun
 )
 
 type section int
@@ -88,6 +89,8 @@ type Model struct {
 
 	rerunRun  ci.Run
 	rerunning bool
+
+	prRerunning bool
 
 	width, height int
 }

@@ -125,6 +125,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rerunning = false
 		m.setToast("Rerun failed: " + msg.err.Error())
 		return m, nil
+	case prRerunDoneMsg:
+		m.prRerunning = false
+		if msg.count == 0 {
+			m.setToast("No failed workflow runs for " + msg.p.Ref())
+		} else {
+			m.setToast(fmt.Sprintf("Reran %d run(s) for %s", msg.count, msg.p.Ref()))
+		}
+		return m, nil
+	case prRerunFailedMsg:
+		m.prRerunning = false
+		if msg.count > 0 {
+			m.setToast(fmt.Sprintf("Reran %d run(s), then failed: %s", msg.count, msg.err.Error()))
+		} else {
+			m.setToast("Rerun failed: " + msg.err.Error())
+		}
+		return m, nil
 	case openedURLMsg:
 		if msg.err != nil {
 			m.setToast("Open failed: " + msg.err.Error())
@@ -170,9 +186,9 @@ func (m *Model) onFetched(msg prsFetchedMsg) (tea.Model, tea.Cmd) {
 	m.fetching = false
 	m.backoff.RecordSuccess()
 	m.clampCursor()
-	// Only the merge/close modals are anchored to a PR row; a refetch that drops
+	// Only the merge/close/prRerun modals are anchored to a PR row; a refetch that drops
 	// that PR dismisses them. CI modals (details/rerun) are not PR-anchored.
-	if (m.modal == modalMerge || m.modal == modalClose) && indexByURL(m.authored, m.modalPR.URL) < 0 {
+	if (m.modal == modalMerge || m.modal == modalClose || m.modal == modalPRRerun) && indexByURL(m.authored, m.modalPR.URL) < 0 {
 		m.modal = modalNone
 	}
 	m.pruneActioned()
@@ -321,10 +337,16 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "R":
-		if m.section == secCI {
+		switch m.section {
+		case secCI:
 			if r, ok := m.selectedRun(); ok && ci.IsFailed(r) {
 				m.modal = modalRerun
 				m.rerunRun = r
+			}
+		case secAuthored:
+			if p, ok := m.selected(); ok && pr.CI(p) == pr.CIFailure {
+				m.modal = modalPRRerun
+				m.modalPR = p
 			}
 		}
 	case "o":
@@ -449,6 +471,8 @@ func (m *Model) onModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.onRerunModalKey(msg)
 	case modalClose:
 		return m.onCloseModalKey(msg)
+	case modalPRRerun:
+		return m.onPRRerunModalKey(msg)
 	default:
 		return m.onMergeModalKey(msg)
 	}
@@ -501,6 +525,20 @@ func (m *Model) onRerunModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.rerunning = true
 			m.modal = modalNone
 			return m, rerunCmd(m.runner, m.rerunRun)
+		}
+	}
+	return m, nil
+}
+
+func (m *Model) onPRRerunModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.modal = modalNone
+	case "enter":
+		if !m.prRerunning {
+			m.prRerunning = true
+			m.modal = modalNone
+			return m, prRerunCmd(m.runner, m.modalPR)
 		}
 	}
 	return m, nil
