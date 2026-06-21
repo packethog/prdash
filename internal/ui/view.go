@@ -127,17 +127,28 @@ const (
 	colGap     = 1
 )
 
-// CI-section column widths for the collapsed workflow rows.
+// CI-section fixed column widths. The LAST column width is computed dynamically
+// in renderCI so the sparkline fits every run (see ciSparkWidth).
 const (
 	ciNameW   = 26 // WORKFLOW
 	ciBranchW = 8  // BRANCH
-	ciSparkW  = 14 // LAST-N column width (cells)
-	// ciSparkMax caps how many run glyphs the collapsed sparkline shows so the
-	// column stays aligned regardless of the configured limit (N glyphs joined by
-	// spaces = 2N-1 cells; 7 → 13 cells, within ciSparkW). Expand a workflow (↵)
-	// to see every run.
-	ciSparkMax = 7
 )
+
+// ciSparkWidth returns the LAST-column width (cells) needed to show every run's
+// status glyph across all workflows, so the column scales with the run count and
+// never truncates the sparkline. N glyphs joined by single spaces = 2N-1 cells;
+// floored at len("LAST") so the header always fits.
+func (m *Model) ciSparkWidth() int {
+	w := ansi.StringWidth("LAST")
+	for wi := range m.workflows {
+		if n := len(m.workflows[wi].Runs); n > 0 {
+			if cells := 2*n - 1; cells > w {
+				w = cells
+			}
+		}
+	}
+	return w
+}
 
 // padTo truncates s to w cells, then right-pads with spaces to exactly w cells,
 // so every column occupies a fixed visible width regardless of wide characters.
@@ -369,10 +380,11 @@ func (m *Model) renderBody() (lines []string, cursorLine int) {
 // lines) of the active cursor item, or -1 when CI is not focused.
 func (m *Model) renderCI() (lines []string, cursorLine int) {
 	cursorLine = -1
+	sparkW := m.ciSparkWidth() // LAST column scales to the run count
 	lines = append(lines, sectionStyle.Render("CI Workflows"))
 	// column header, dimmed, aligned to the collapsed columns
 	hdr := padTo("WORKFLOW", ciNameW+colGap) + padTo("BRANCH", ciBranchW+colGap) +
-		padTo("LAST", ciSparkW+colGap) + "UPDATED"
+		padTo("LAST", sparkW+colGap) + "UPDATED"
 	lines = append(lines, dimStyle.Render(hdr))
 	if len(m.workflows) == 0 {
 		lines = append(lines, dimStyle.Render("  (none)"))
@@ -419,12 +431,9 @@ func (m *Model) renderCI() (lines []string, cursorLine int) {
 			if len(w.Runs) > 0 {
 				updated = humanizeSince(m.now().Sub(w.Runs[0].UpdatedAt)) + " ago"
 			}
-			runs := w.Runs // newest-first; cap glyphs so the column stays aligned
-			if len(runs) > ciSparkMax {
-				runs = runs[:ciSparkMax]
-			}
-			plainSpark := padTo(sparklinePlain(runs), ciSparkW+colGap)
-			colorSpark := padToWidth(sparkline(runs), ansi.StringWidth(sparklinePlain(runs)), ciSparkW+colGap)
+			runs := w.Runs // newest-first; the LAST column scales to fit them all
+			plainSpark := padTo(sparklinePlain(runs), sparkW+colGap)
+			colorSpark := padToWidth(sparkline(runs), ansi.StringWidth(sparklinePlain(runs)), sparkW+colGap)
 			appendRow(name+blankBranch+plainSpark+updated,
 				name+blankBranch+colorSpark+dimStyle.Render(updated))
 		}
@@ -436,8 +445,8 @@ func (m *Model) renderCI() (lines []string, cursorLine int) {
 				// (BRANCH), status glyph (LAST), "<updated> ago (<runtime>)" (UPDATED).
 				num := padTo(fmt.Sprintf("    #%d", r.RunNumber), ciNameW+colGap)
 				rbranch := padTo(r.Branch, ciBranchW+colGap)
-				glyphPlain := padTo(st.Symbol(), ciSparkW+colGap)
-				glyphColored := padToWidth(ciRunStyle(st).Render(st.Symbol()), ansi.StringWidth(st.Symbol()), ciSparkW+colGap)
+				glyphPlain := padTo(st.Symbol(), sparkW+colGap)
+				glyphColored := padToWidth(ciRunStyle(st).Render(st.Symbol()), ansi.StringWidth(st.Symbol()), sparkW+colGap)
 				upd := ""
 				if !r.UpdatedAt.IsZero() {
 					upd = humanizeSince(m.now().Sub(r.UpdatedAt)) + " ago"

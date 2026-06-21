@@ -38,6 +38,35 @@ func TestExpandedRunRowLayout(t *testing.T) {
 	}
 }
 
+// The LAST column scales to the run count: all status glyphs render and the
+// UPDATED time still follows (no truncation) even past the old 7-glyph cap.
+func TestSparklineScalesToRunCount(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
+	m.width, m.height = 200, 40
+	updated := time.Date(2026, 6, 20, 18, 0, 0, 0, time.UTC)
+	m.now = func() time.Time { return updated.Add(3 * time.Minute) }
+	runs := make([]ci.Run, 10) // more than the old ciSparkMax of 7
+	for i := range runs {
+		runs[i] = ci.Run{RunID: int64(i + 1), RunNumber: i + 1, Status: "completed", Conclusion: "success", UpdatedAt: updated}
+	}
+	m.section = secCI
+	m.workflows = []ci.WorkflowRuns{{Name: "QA", Key: "w.yml", Repo: "a/b", Runs: runs}}
+	out := m.View()
+	// the collapsed row line holds all 10 glyphs followed by the updated time
+	var row string
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.Contains(ln, "QA") && strings.Contains(ln, "✓") {
+			row = ln
+		}
+	}
+	if got := strings.Count(row, "✓"); got != 10 {
+		t.Errorf("collapsed sparkline shows %d glyphs, want 10:\n%s", got, row)
+	}
+	if !strings.Contains(row, "3m ago") {
+		t.Errorf("updated time cut off by the sparkline:\n%s", row)
+	}
+}
+
 // Opening a run's details renders the panel inline beneath the run without wiping
 // the rest of the window (the section header and run row stay visible).
 func TestDetailsRenderInline(t *testing.T) {
