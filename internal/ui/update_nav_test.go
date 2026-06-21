@@ -20,7 +20,7 @@ func testCIConfig(t *testing.T) config.CI {
 	body := "ci:\n  limit: 5\n  provider: claude\n  prompt: \"debug {{.URL}}\"\n  workflows:\n    - repo: a/b\n      workflow: w.yml\n      name: QA\n      summaryArtifact: qa-analysis-*\n"
 	_ = os.WriteFile(filepath.Join(dir, "prdash", "config.yaml"), []byte(body), 0o644)
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	_, c, err := config.Load()
+	_, c, _, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
 	}

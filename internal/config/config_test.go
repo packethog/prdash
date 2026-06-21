@@ -70,7 +70,7 @@ func TestZeroReviewDisabled(t *testing.T) {
 
 func TestLoadMissingFileIsDisabledNoError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty dir: no config.yaml
-	r, _, err := Load()
+	r, _, _, err := Load()
 	if err != nil {
 		t.Fatalf("missing file should not error: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestLoadValidFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	body := "review:\n  provider: claude\n  prompt: \"go {{.URL}}\"\n"
 	writeConfig(t, dir, body)
-	r, _, err := Load()
+	r, _, _, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestLoadInvalidFileIsDisabledWithError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	body := "review:\n  provider: nope\n  prompt: x\n"
 	writeConfig(t, dir, body)
-	r, _, err := Load()
+	r, _, _, err := Load()
 	if err == nil {
 		t.Fatal("expected error for invalid provider")
 	}
@@ -123,7 +123,7 @@ func TestLoadFileWithoutReviewTableIsDisabledNoError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	// Present file, but no review section at all.
 	writeConfig(t, dir, "# empty\n")
-	r, _, err := Load()
+	r, _, _, err := Load()
 	if err != nil {
 		t.Fatalf("absent review section should not error: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestLoadMalformedYAMLIsDisabledWithError(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	writeConfig(t, dir, "review:\n  provider: [unclosed\n")
-	r, _, err := Load()
+	r, _, _, err := Load()
 	if err == nil {
 		t.Fatal("expected error for malformed YAML")
 	}
@@ -152,7 +152,7 @@ func TestLoadUnknownKeyIsError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	// "boguskey" is not in fileSchema — strict decoding must reject it.
 	writeConfig(t, dir, "boguskey: oops\n")
-	_, _, err := Load()
+	_, _, _, err := Load()
 	if err == nil {
 		t.Fatal("expected error for unknown YAML key")
 	}
@@ -166,7 +166,7 @@ func TestLoadUnknownWorkflowKeyIsError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	body := "ci:\n  workflows:\n    - repo: a/b\n      workflow: w.yml\n      summaryartifact: oops\n"
 	writeConfig(t, dir, body)
-	_, _, err := Load()
+	_, _, _, err := Load()
 	if err == nil {
 		t.Fatal("expected error for misspelled workflow key summaryartifact")
 	}
@@ -178,7 +178,7 @@ func TestLoadEmptyFileIsDisabledNoError(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	writeConfig(t, dir, "")
-	r, c, err := Load()
+	r, c, _, err := Load()
 	if err != nil {
 		t.Fatalf("empty file should not error: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestLoadTOMLWarning(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(pdir, "config.toml"), []byte("[review]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := Load()
+	_, _, _, err := Load()
 	if err == nil {
 		t.Fatal("expected migration error when config.toml exists but config.yaml does not")
 	}
@@ -214,7 +214,7 @@ func TestLoadReadsArgs(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	body := "review:\n  provider: claude\n  args: [\"--permission-mode\", \"auto\"]\n  prompt: \"go {{.URL}}\"\n"
 	writeConfig(t, dir, body)
-	r, _, err := Load()
+	r, _, _, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ ci:
 	}
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	_, c, err := Load()
+	_, c, _, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -311,5 +311,117 @@ func TestLoadCILimitNoUpperCap(t *testing.T) {
 	}
 	if got := c.LimitFor(c.Workflows[0]); got != 250 {
 		t.Errorf("LimitFor = %d, want 250 (no upper clamp)", got)
+	}
+}
+
+func TestLoadPRDebug(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "prdash"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `
+prDebug:
+  provider: claude
+  args: ["--permission-mode", "auto"]
+  prompt: "Debug {{.URL}} ({{.Repo}}#{{.Number}})"
+`
+	if err := os.WriteFile(filepath.Join(dir, "prdash", "config.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	_, _, prd, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !prd.Enabled() {
+		t.Fatal("prDebug should be enabled")
+	}
+	got, err := prd.Render(pr.PR{URL: "u", Repo: "o/r", Number: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "Debug u (o/r#7)" {
+		t.Errorf("render = %q", got)
+	}
+	if len(prd.Args) != 2 {
+		t.Errorf("args not carried: %v", prd.Args)
+	}
+}
+
+func TestLoadPRDebugInvalidProviderDisablesOnlyIt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "prdash"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `
+review:
+  provider: claude
+  prompt: "review {{.URL}}"
+ci:
+  provider: claude
+  prompt: "debug {{.URL}}"
+  workflows:
+    - repo: a/b
+      workflow: w.yml
+prDebug:
+  provider: bogus
+  prompt: "x {{.URL}}"
+`
+	if err := os.WriteFile(filepath.Join(dir, "prdash", "config.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	rev, c, prd, err := Load()
+	if err == nil {
+		t.Fatal("want error for bad prDebug provider")
+	}
+	if !rev.Enabled() {
+		t.Error("review should stay enabled when only prDebug is invalid")
+	}
+	if !c.Enabled() {
+		t.Error("ci should stay enabled when only prDebug is invalid")
+	}
+	if prd.Enabled() {
+		t.Error("prDebug should be disabled on invalid provider")
+	}
+}
+
+func TestLoadPRDebugInvalidTemplateDisablesIt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "prdash"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// {{.Nope}} is not a tmplData field → fails the load-time dry run.
+	body := "prDebug:\n  provider: claude\n  prompt: \"debug {{.Nope}}\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "prdash", "config.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	_, _, prd, err := Load()
+	if err == nil {
+		t.Fatal("want error for unknown template field")
+	}
+	if prd.Enabled() {
+		t.Error("prDebug should be disabled on invalid template")
+	}
+}
+
+func TestLoadPRDebugAbsent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "prdash"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "prdash", "config.yaml"), []byte("review:\n  provider: claude\n  prompt: \"r {{.URL}}\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	_, _, prd, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prd.Enabled() {
+		t.Error("absent prDebug must be disabled")
 	}
 }

@@ -45,10 +45,11 @@ func main() {
 	if err != nil {
 		os.Exit(2)
 	}
-	rev, ciCfg, err := prconfig.Load()
+	rev, ciCfg, prd, err := prconfig.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "prdash:", err) // non-fatal: affected feature stays disabled
 	}
+	_ = prd // wired via ui.WithPRDebug in the UI task
 	model := ui.New(gh.NewExecRunner(), cfg.interval, cfg.limit, ui.WithReview(rev), ui.WithCI(ciCfg))
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "prdash:", err)
