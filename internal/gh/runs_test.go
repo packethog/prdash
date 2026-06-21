@@ -192,3 +192,17 @@ func TestRerunPRFailedReturnsCountOnError(t *testing.T) {
 		t.Errorf("count = %d, want 1 (only the first rerun succeeded)", n)
 	}
 }
+
+func TestRerunPRFailedEmptySHANoOp(t *testing.T) {
+	f := &fakeRunner{out: []byte(`[{"databaseId":1,"headSha":"","status":"completed","conclusion":"failure"}]`)}
+	n, err := RerunPRFailed(context.Background(), f, "o/r", "feat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("count = %d, want 0 for empty headSHA", n)
+	}
+	if len(f.gotArgs) != 0 {
+		t.Errorf("empty headSHA must make no gh calls, got %d", len(f.gotArgs))
+	}
+}

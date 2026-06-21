@@ -191,6 +191,16 @@ func (m *Model) onFetched(msg prsFetchedMsg) (tea.Model, tea.Cmd) {
 	if (m.modal == modalMerge || m.modal == modalClose || m.modal == modalPRRerun) && indexByURL(m.authored, m.modalPR.URL) < 0 {
 		m.modal = modalNone
 	}
+	// The PR rerun targets a specific head commit; if the captured PR is still
+	// present but its head advanced or its CI is no longer failed, the confirm is
+	// stale — dismiss it so Enter can't rerun a superseded commit.
+	if m.modal == modalPRRerun {
+		if i := indexByURL(m.authored, m.modalPR.URL); i >= 0 {
+			if cur := m.authored[i]; cur.HeadSHA != m.modalPR.HeadSHA || pr.CI(cur) != pr.CIFailure {
+				m.modal = modalNone
+			}
+		}
+	}
 	m.pruneActioned()
 	if m.pendingRefresh {
 		m.pendingRefresh = false

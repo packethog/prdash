@@ -134,8 +134,9 @@ run (not a PR).
 Pressing `R` on a PR in the **Authored** bucket whose **CI has failed** (`✗`)
 opens an inline confirmation prompt. Confirming reruns only the failing jobs
 (`gh run rerun --failed`) of every Actions run on the PR's **head commit** that
-completed with a failure, timed-out, or startup-failure conclusion. The key does
-nothing when the selected PR has any other CI status.
+completed with a failure, timed-out, or startup-failure conclusion (found by
+scanning the branch's most recent 50 runs). The key does nothing when the
+selected PR has any other CI status.
 
 Unlike the `d` debug key, `R` is not cmux-gated — it works in any terminal.
 

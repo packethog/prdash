@@ -123,6 +123,11 @@ type prRunNode struct {
 // matches and whose conclusion is failure/timed_out/startup_failure, and calls
 // `gh run rerun <id> --failed` on each. Returns the number of runs reran.
 func RerunPRFailed(ctx context.Context, r Runner, repo, branch, headSHA string) (int, error) {
+	// Guard: an empty target SHA would match runs whose headSha decodes empty and
+	// could rerun unrelated branch runs. Nothing to do without a real head commit.
+	if headSHA == "" {
+		return 0, nil
+	}
 	out, err := r.Run(ctx, "run", "list", "-R", repo, "--branch", branch,
 		"--limit", strconv.Itoa(prRunListCap), "--json", "databaseId,headSha,status,conclusion")
 	if err != nil {
@@ -143,7 +148,7 @@ func RerunPRFailed(ctx context.Context, r Runner, repo, branch, headSHA string) 
 			continue
 		}
 		if err := RerunFailed(ctx, r, repo, node.DatabaseID); err != nil {
-			return n, err
+			return n, fmt.Errorf("rerun run %d in %s: %w", node.DatabaseID, repo, err)
 		}
 		n++
 	}

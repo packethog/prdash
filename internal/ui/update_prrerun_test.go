@@ -8,8 +8,46 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/packethog/prdash/internal/gh"
 	"github.com/packethog/prdash/internal/pr"
 )
+
+// A refetch that advances the captured PR's head SHA or clears its failed CI
+// dismisses an open rerun confirm, so Enter can't rerun a superseded commit.
+func TestPRRerunStaleModalDismissedOnRefetch(t *testing.T) {
+	armed := func() *Model {
+		m := New(stubRunner{}, time.Second, 10)
+		m.section = secAuthored
+		p := prRerunPR(1, "FAILURE") // HeadSHA "abc"
+		m.authored = []pr.PR{p}
+		m.modal = modalPRRerun
+		m.modalPR = p
+		return m
+	}
+	t.Run("head advanced", func(t *testing.T) {
+		m := armed()
+		p2 := prRerunPR(1, "FAILURE")
+		p2.HeadSHA = "def"
+		m.Update(prsFetchedMsg{res: gh.FetchResult{Authored: []pr.PR{p2}}})
+		if m.modal != modalNone {
+			t.Fatal("modal should be dismissed when head SHA changed")
+		}
+	})
+	t.Run("ci recovered", func(t *testing.T) {
+		m := armed()
+		m.Update(prsFetchedMsg{res: gh.FetchResult{Authored: []pr.PR{prRerunPR(1, "SUCCESS")}}})
+		if m.modal != modalNone {
+			t.Fatal("modal should be dismissed when CI is no longer failed")
+		}
+	})
+	t.Run("unchanged stays armed", func(t *testing.T) {
+		m := armed()
+		m.Update(prsFetchedMsg{res: gh.FetchResult{Authored: []pr.PR{prRerunPR(1, "FAILURE")}}})
+		if m.modal != modalPRRerun {
+			t.Fatal("modal should stay armed when head SHA and failed CI are unchanged")
+		}
+	})
+}
 
 // uniquely named to avoid colliding with any existing test error in the package.
 var errPRRerun = errors.New("boom")
