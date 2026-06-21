@@ -77,14 +77,13 @@ type Model struct {
 	workflows []ci.WorkflowRuns
 	expanded  map[string]bool
 
-	detailRun    ci.Run
-	detailGlob   string // summaryArtifact glob for the captured run's workflow
-	detailFile   string // summaryFile within the artifact
-	detail       gh.RunDetail
-	detailErr    error
-	summary      string
-	summaryErr   error
-	detailScroll int // scroll offset within the details modal body
+	detailRun  ci.Run
+	detailGlob string // summaryArtifact glob for the captured run's workflow
+	detailFile string // summaryFile within the artifact
+	detail     gh.RunDetail
+	detailErr  error
+	summary    string
+	summaryErr error
 
 	rerunRun  ci.Run
 	rerunning bool

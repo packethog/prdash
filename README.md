@@ -75,16 +75,16 @@ prdash --limit 25      # fetch up to 25 PRs per bucket (min 1)
 | `c` | close selected (authored only; opens confirm) |
 | `o` | open selected PR or CI run in browser |
 | `v` | review selected with Claude/Codex (awaiting-review bucket, cmux only, when configured) |
-| `↵` | CI: expand/collapse a workflow header; open run details modal |
-| `d` | CI: debug dispatch (failed run selected or in details modal; cmux only, when configured) |
-| `R` | CI: rerun failed jobs (failed run selected or in details modal; opens confirm) |
+| `↵` | CI: expand/collapse a workflow header; open/close a run's inline details |
+| `d` | CI: debug dispatch (CI section, cmux only, when configured; acts on the selected run) |
+| `R` | CI: rerun failed jobs (failed run selected or in details; opens confirm) |
 | `q` / `ctrl+c` | quit |
 
 In the merge modal: `←`/`→` (or `s`) cycle method, `enter` confirms (only when
 approved + CI green), `esc` cancels.
 
-In the details modal: `↑`/`↓` scroll, `↵`/`esc` close, `o` open run page,
-`d` debug (failed runs only), `R` rerun (failed runs only).
+While a run's details are open: `↵`/`esc` close, `o` open run page,
+`d` debug (under cmux), `R` rerun (failed runs only).
 
 ## Behavior notes
 
@@ -133,30 +133,37 @@ each configured workflow and shows them as a sparkline of status glyphs.
 | `◐` | queued or in progress (yellow) |
 | `–` | unknown / no runs |
 
+Columns: **WORKFLOW**, **BRANCH**, **LAST** (status), **UPDATED**. Collapsed
+workflow rows show the sparkline of the last N runs under LAST; expanded run rows
+align under the same columns — `#number` (WORKFLOW), the run's branch (BRANCH),
+its status glyph (LAST), and `<age> ago (<runtime>)` (UPDATED).
+
 **Navigation:**
 
 - `↑`/`↓` move the cursor over workflow headers and (when expanded) run rows.
 - `↵` on a **workflow header** — expand or collapse it. Collapsed rows show a
-  sparkline of the last N runs. Expanded rows show each run individually with
-  its number, status label, and age.
-- `↵` on an **expanded run row** — open the run details modal (see below).
+  sparkline of the last N runs; expanded rows show each run on its own line.
+- `↵` on an **expanded run row** — open the run details inline beneath the row
+  (see below); `↵`/`esc` again closes it.
 - `o` — open the selected run's GitHub page in a browser pane.
 - `d` — debug dispatch: spawn the configured provider in a cmux pane with a
-  rendered debug prompt. Only active for **failed runs**, under cmux, when
-  `ci.provider` and `ci.prompt` are configured.
+  rendered debug prompt. Shown whenever the CI section is focused under cmux with
+  `ci.provider`/`ci.prompt` configured (same convention as `v` review); acts on
+  the selected run.
 - `R` — rerun failed jobs: opens a confirmation prompt, then runs
   `gh run rerun --failed`. Only active for **failed runs**.
 
-**Details modal** (`↵` on a run row):
+**Run details** (`↵` on a run row):
 
-The modal shows structured run metadata (status, branch, timing, jobs with the
-failed step). When the workflow is configured with `summaryArtifact`, prdash
-also fetches the newest matching artifact and renders `summaryFile` (default
-`analysis.txt`) as an in-TUI failure analysis summary. When no artifact is
-found, the modal shows a hint to press `o` to open the run page instead.
+The details render **inline beneath the run** (the rest of the dashboard stays
+visible). They show the job breakdown (`jobs: ✓ qa ✗ analyze`), the failed step,
+and — when the workflow is configured with `summaryArtifact` — the newest
+matching artifact's `summaryFile` (default `analysis.txt`) as an in-TUI failure
+analysis. When no artifact is found, the panel shows a hint to press `o` to open
+the run page instead.
 
-Keys inside the modal: `↑`/`↓` scroll · `↵`/`esc` close · `o` open run page ·
-`d` debug (failed runs) · `R` rerun (failed runs).
+Keys while details are open: `↵`/`esc` close · `o` open run page · `d` debug
+(under cmux) · `R` rerun (failed runs).
 
 **In-TUI analysis summary** requires your workflow to upload the analysis file
 as an artifact. For example, add an `actions/upload-artifact` step:
@@ -169,8 +176,8 @@ as an artifact. For example, add an `actions/upload-artifact` step:
 ```
 
 Then set `summaryArtifact: qa-analysis-*` (and optionally `summaryFile`) in
-your `config.yaml`. Without this step in the workflow, the details modal shows
-run metadata and an "open the run page" hint — prdash degrades gracefully.
+your `config.yaml`. Without this step in the workflow, the details panel shows
+the run breakdown and an "open the run page" hint — prdash degrades gracefully.
 
 ## Configuration
 

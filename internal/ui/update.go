@@ -282,7 +282,7 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "d":
 		if m.section == secCI && m.ciDebugEligible() {
-			if r, ok := m.selectedRun(); ok && ci.IsFailed(r) {
+			if r, ok := m.selectedRun(); ok {
 				return m, ciDebugCmd(m.cmux, m.ci, r)
 			}
 		}
@@ -320,7 +320,7 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					r := m.workflows[it.wf].Runs[it.run]
 					m.modal = modalDetails
 					m.detailRun = r
-					m.summary, m.summaryErr, m.detailErr, m.detailScroll = "", nil, nil, 0
+					m.summary, m.summaryErr, m.detailErr = "", nil, nil
 					m.detail = gh.RunDetail{}
 					glob, file := m.summaryConfigFor(r)
 					m.detailGlob, m.detailFile = glob, file
@@ -437,18 +437,10 @@ func (m *Model) onDetailsModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "enter", "q":
 		m.modal = modalNone
-	case "up", "k":
-		if m.detailScroll > 0 {
-			m.detailScroll--
-		}
-	case "down", "j":
-		if m.detailScroll < len(m.detailsLines())-1 {
-			m.detailScroll++
-		}
 	case "o":
 		return m, openURLCmd(m.runner, m.detailRun.URL)
 	case "d":
-		if m.ciDebugEligible() && ci.IsFailed(m.detailRun) {
+		if m.ciDebugEligible() {
 			return m, ciDebugCmd(m.cmux, m.ci, m.detailRun)
 		}
 	case "R":

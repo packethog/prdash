@@ -405,13 +405,15 @@ func (m *Model) renderCI() (lines []string, cursorLine int) {
 			marker = "▾"
 		}
 		name := padTo(marker+" "+w.Name, ciNameW+colGap)
-		branch := padTo(w.Branch, ciBranchW+colGap)
+		// Branch is shown per run row, not on the workflow header; keep an empty
+		// BRANCH cell on the header so the LAST/UPDATED columns stay aligned.
+		blankBranch := padTo("", ciBranchW+colGap)
 		switch {
 		case expanded:
-			// expanded header: name + branch only
-			appendRow(name+branch, name+dimStyle.Render(branch))
+			// expanded header: just the workflow name
+			appendRow(name, name)
 		case w.Err != nil:
-			appendRow(name+branch+"error", name+dimStyle.Render(branch)+offlineStyle.Render("error"))
+			appendRow(name+blankBranch+"error", name+blankBranch+offlineStyle.Render("error"))
 		default:
 			updated := ""
 			if len(w.Runs) > 0 {
@@ -423,19 +425,32 @@ func (m *Model) renderCI() (lines []string, cursorLine int) {
 			}
 			plainSpark := padTo(sparklinePlain(runs), ciSparkW+colGap)
 			colorSpark := padToWidth(sparkline(runs), ansi.StringWidth(sparklinePlain(runs)), ciSparkW+colGap)
-			appendRow(name+branch+plainSpark+updated,
-				name+dimStyle.Render(branch)+colorSpark+dimStyle.Render(updated))
+			appendRow(name+blankBranch+plainSpark+updated,
+				name+blankBranch+colorSpark+dimStyle.Render(updated))
 		}
 		if expanded {
 			for ri := range w.Runs {
 				r := w.Runs[ri]
 				st := ci.Status(r)
-				glyphPlain := st.Symbol()
-				num := fmt.Sprintf(" #%d", r.RunNumber)
-				rest := fmt.Sprintf("   %s   %s", st.Label(), humanizeSince(m.now().Sub(r.UpdatedAt))+" ago")
-				plain := "     " + glyphPlain + num + rest
-				colored := "     " + ciRunStyle(st).Render(glyphPlain) + num + rest
-				appendRow(plain, colored)
+				// Columns aligned under the header: #number (WORKFLOW), branch
+				// (BRANCH), status glyph (LAST), "<updated> ago (<runtime>)" (UPDATED).
+				num := padTo(fmt.Sprintf("    #%d", r.RunNumber), ciNameW+colGap)
+				rbranch := padTo(r.Branch, ciBranchW+colGap)
+				glyphPlain := padTo(st.Symbol(), ciSparkW+colGap)
+				glyphColored := padToWidth(ciRunStyle(st).Render(st.Symbol()), ansi.StringWidth(st.Symbol()), ciSparkW+colGap)
+				upd := ""
+				if !r.UpdatedAt.IsZero() {
+					upd = humanizeSince(m.now().Sub(r.UpdatedAt)) + " ago"
+				}
+				if !r.CreatedAt.IsZero() && r.UpdatedAt.After(r.CreatedAt) {
+					upd += " (" + humanizeSince(r.UpdatedAt.Sub(r.CreatedAt)) + ")"
+				}
+				appendRow(num+rbranch+glyphPlain+upd,
+					num+dimStyle.Render(rbranch)+glyphColored+dimStyle.Render(upd))
+				// Inline details panel under the selected run while it's open.
+				if m.modal == modalDetails && r.RunID == m.detailRun.RunID {
+					lines = append(lines, m.ciDetailLines()...)
+				}
 			}
 		}
 	}
@@ -448,59 +463,45 @@ func (m *Model) renderCI() (lines []string, cursorLine int) {
 	return lines, cursorLine
 }
 
-// detailsLines builds the modal body for the details view of the selected CI run.
-func (m *Model) detailsLines() []string {
-	r := m.detailRun
+// ciDetailLines builds the inline details panel rendered beneath the selected
+// run row (status/branch/runtime already live on the row itself, so this adds the
+// job breakdown, the failed step, and the analysis summary or its fallback).
+func (m *Model) ciDetailLines() []string {
+	const ind = "       " // align under the run row's content
 	var b []string
-	b = append(b, titleStyle.Render(fmt.Sprintf("run #%d · %s", r.RunNumber, r.WorkflowName)))
 	if m.detailErr != nil {
-		b = append(b, offlineStyle.Render("  failed to load run detail: "+m.detailErr.Error()))
-	} else {
-		// Until FetchRunDetail lands, render from the already-known ci.Run so the
-		// header is never blank; show a loading hint while detail data is pending.
-		status, concl, branch := m.detail.Status, m.detail.Conclusion, m.detail.HeadBranch
-		loading := status == ""
-		if loading {
-			status, concl, branch = m.detailRun.Status, m.detailRun.Conclusion, m.detailRun.Branch
-		}
-		b = append(b, fmt.Sprintf("  status: %s / %s    branch: %s", status, concl, branch))
-		if loading {
-			b = append(b, dimStyle.Render("  loading details…"))
-		}
-		if !m.detail.CreatedAt.IsZero() {
-			timing := "  started " + humanizeSince(m.now().Sub(m.detail.CreatedAt)) + " ago"
-			if m.detail.UpdatedAt.After(m.detail.CreatedAt) {
-				timing += fmt.Sprintf(" (ran %s)", humanizeSince(m.detail.UpdatedAt.Sub(m.detail.CreatedAt)))
-			}
-			b = append(b, timing)
-		}
-		if len(m.detail.Jobs) > 0 {
-			parts := make([]string, 0, len(m.detail.Jobs))
-			for _, j := range m.detail.Jobs {
-				parts = append(parts, jobGlyph(j)+" "+j.Name)
-			}
-			b = append(b, "  jobs: "+strings.Join(parts, "   "))
-		}
-		if job, step, ok := m.detail.FailedStep(); ok {
-			label := job
-			if step != "" {
-				label += " · " + step
-			}
-			b = append(b, "  failed step: "+offlineStyle.Render(label))
-		}
+		return append(b, ind+offlineStyle.Render("failed to load details: "+m.detailErr.Error()))
 	}
-	b = append(b, "")
+	if m.detail.Status == "" { // FetchRunDetail not back yet
+		b = append(b, ind+dimStyle.Render("loading details…"))
+	}
+	if len(m.detail.Jobs) > 0 {
+		parts := make([]string, 0, len(m.detail.Jobs))
+		for _, j := range m.detail.Jobs {
+			parts = append(parts, jobGlyph(j)+" "+j.Name)
+		}
+		b = append(b, ind+dimStyle.Render("jobs: ")+strings.Join(parts, "   "))
+	}
+	if job, step, ok := m.detail.FailedStep(); ok {
+		label := job
+		if step != "" {
+			label += " · " + step
+		}
+		b = append(b, ind+dimStyle.Render("failed step: ")+offlineStyle.Render(label))
+	}
 	switch {
 	case m.summary != "":
-		b = append(b, strings.Split(strings.TrimRight(m.summary, "\n"), "\n")...)
+		for _, ln := range strings.Split(strings.TrimRight(m.summary, "\n"), "\n") {
+			b = append(b, ind+ln)
+		}
 	case m.summaryErr != nil && errors.Is(m.summaryErr, gh.ErrNoArtifact):
-		b = append(b, dimStyle.Render("no analysis artifact for this run — press o to open the run page"))
+		b = append(b, ind+dimStyle.Render("no analysis artifact — press o to open the run page"))
 	case m.summaryErr != nil:
-		b = append(b, dimStyle.Render("could not load analysis: "+m.summaryErr.Error()))
+		b = append(b, ind+dimStyle.Render("could not load analysis: "+m.summaryErr.Error()))
 	case m.detailGlob != "":
-		b = append(b, dimStyle.Render("loading analysis…"))
+		b = append(b, ind+dimStyle.Render("loading analysis…"))
 	default:
-		b = append(b, dimStyle.Render("press o to open the run page"))
+		b = append(b, ind+dimStyle.Render("press o to open the run page"))
 	}
 	return b
 }
@@ -560,24 +561,9 @@ func (m *Model) clampLine(s string) string {
 // trailing newline, so the total line count is exactly len(top)+len(visible)+
 // len(footer) and never exceeds m.height.
 func (m *Model) View() string {
+	// The details panel renders inline beneath its run (see renderCI), so the
+	// rest of the dashboard stays visible — View renders the body normally.
 	body, cursorLine := m.renderBody()
-
-	if m.modal == modalDetails {
-		body = m.detailsLines()
-		cursorLine = -1
-		// Apply the modal scroll offset with a LOCAL clamp — View must not mutate
-		// model state. The offset is bounded in onDetailsModalKey too.
-		scroll := m.detailScroll
-		if scroll > len(body)-1 {
-			scroll = len(body) - 1
-		}
-		if scroll < 0 {
-			scroll = 0
-		}
-		if scroll > 0 {
-			body = body[scroll:]
-		}
-	}
 
 	var visible []string
 	hint := ""
@@ -590,10 +576,7 @@ func (m *Model) View() string {
 		}
 		var first int
 		visible, first = window(body, cursorLine, vp)
-		// Suppress the scroll hint for the details modal: the body was
-		// pre-sliced by the scroll offset, so first+len(visible) would
-		// misreport the total count.
-		if vp > 0 && len(body) > vp && m.modal != modalDetails {
+		if vp > 0 && len(body) > vp {
 			hint = dimStyle.Render(fmt.Sprintf("  %d–%d/%d", first+1, first+len(visible), len(body)))
 		}
 	}
@@ -605,19 +588,19 @@ func (m *Model) View() string {
 	keyText := "↑↓ move  tab switch  r refresh"
 	switch {
 	case m.modal == modalDetails:
-		keyText = "↑↓ scroll  ↵/esc close  o open run page"
+		keyText = "↵/esc close  o open run page"
+		if m.ciDebugEligible() {
+			keyText += "  d debug"
+		}
 		if ci.IsFailed(m.detailRun) {
-			if m.ciDebugEligible() {
-				keyText += "  d debug"
-			}
 			keyText += "  R rerun"
 		}
 	case m.section == secCI:
 		keyText += "  ↵ details/expand  o open"
+		if m.ciDebugEligible() {
+			keyText += "  d debug"
+		}
 		if r, ok := m.selectedRun(); ok && ci.IsFailed(r) {
-			if m.ciDebugEligible() {
-				keyText += "  d debug"
-			}
 			keyText += "  R rerun"
 		}
 		keyText += "  q quit"
