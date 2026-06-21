@@ -110,9 +110,6 @@ func TestFetchDecodesLatestReviews(t *testing.T) {
 	}
 }
 
-// TestFetchDecodesOpinionatedReviews covers the latestOpinionatedReviews wiring:
-// an approval that GitHub surfaces only there (latestReviews empty) must reach
-// the PR so the badge can read it.
 func TestFetchDecodesHeadSHA(t *testing.T) {
 	out := `{"data":{"authored":{"nodes":[
 	  {"number":7,"title":"t","url":"u","isDraft":false,"updatedAt":"2026-06-21T00:00:00Z",
@@ -138,6 +135,9 @@ func TestSearchQueryRequestsOid(t *testing.T) {
 	}
 }
 
+// TestFetchDecodesOpinionatedReviews covers the latestOpinionatedReviews wiring:
+// an approval that GitHub surfaces only there (latestReviews empty) must reach
+// the PR so the badge can read it.
 func TestFetchDecodesOpinionatedReviews(t *testing.T) {
 	body := `{"data":{"authored":{"nodes":[]},"reviewing":{"nodes":[
 		{"number":112,"url":"https://github.com/o/r/pull/112","repository":{"nameWithOwner":"o/r"},
