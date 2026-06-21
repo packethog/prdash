@@ -75,16 +75,17 @@ prdash --limit 25      # fetch up to 25 PRs per bucket (min 1)
 | `c` | close selected (authored only; opens confirm) |
 | `o` | open selected PR or CI run in browser |
 | `v` | review selected with Claude/Codex (awaiting-review bucket, cmux only, when configured) |
-| `↵` | CI: expand/collapse a workflow header; open/close a run's inline details |
+| `↵` / `space` | CI: expand/collapse a workflow header; open/close a run's inline details |
 | `d` | CI: debug dispatch (CI section, cmux only, when configured; acts on the selected run) |
 | `R` | CI: rerun failed jobs (failed run selected or in details; opens confirm) |
-| `q` / `ctrl+c` | quit |
+| `q` | quit (when no modal is open) |
+| `ctrl+c` | quit (always, even with a modal/details open) |
 
 In the merge modal: `←`/`→` (or `s`) cycle method, `enter` confirms (only when
 approved + CI green), `esc` cancels.
 
-While a run's details are open: `↵`/`esc` close, `o` open run page,
-`d` debug (under cmux), `R` rerun (failed runs only).
+While a run's details are open: `↵`/`space`/`esc` close, `o` open run page,
+`d` debug (under cmux), `R` rerun (failed runs only). `ctrl+c` quits from anywhere.
 
 ## Behavior notes
 

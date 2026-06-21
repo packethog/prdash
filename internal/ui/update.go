@@ -253,6 +253,10 @@ func (m *Model) prevSection() section {
 }
 
 func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// ctrl+c always quits, even with a modal (e.g. run details) open.
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
 	if m.modal != modalNone {
 		return m.onModalKey(msg)
 	}
@@ -326,7 +330,7 @@ func (m *Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, reviewCmd(m.cmux, m.review, p)
 			}
 		}
-	case "enter":
+	case "enter", " ":
 		if m.section == secCI {
 			if it, ok := m.selectedCIItem(); ok {
 				switch it.kind {
@@ -452,7 +456,7 @@ func (m *Model) onMergeModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) onDetailsModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "enter", "q":
+	case "esc", "enter", " ", "q":
 		m.modal = modalNone
 	case "o":
 		return m, openURLCmd(m.runner, m.detailRun.URL)

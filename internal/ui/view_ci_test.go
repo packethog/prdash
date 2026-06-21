@@ -64,6 +64,39 @@ func TestExpandedRunRowLayout(t *testing.T) {
 	}
 }
 
+// ctrl+c quits even while a run's details panel is open.
+func TestCtrlCQuitsFromDetails(t *testing.T) {
+	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
+	m.modal = modalDetails
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("ctrl+c should return a quit cmd while details are open")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("expected tea.QuitMsg, got %T", cmd())
+	}
+}
+
+// space toggles expand on a header and opens details on a run, like enter.
+func TestSpaceMirrorsEnter(t *testing.T) {
+	space := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
+	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
+	m.section = secCI
+	m.workflows = []ci.WorkflowRuns{{Name: "QA", Key: "w.yml", Repo: "a/b", Runs: []ci.Run{
+		{RunID: 1, RunNumber: 1, Status: "completed", Conclusion: "failure"},
+	}}}
+	m.cursor = 0 // header
+	m.Update(space)
+	if !m.expanded["a/b w.yml"] {
+		t.Fatal("space on a header should expand it")
+	}
+	m.cursor = 1 // the run row
+	m.Update(space)
+	if m.modal != modalDetails {
+		t.Fatalf("space on a run should open details, got modal %v", m.modal)
+	}
+}
+
 // shift+tab rotates sections in reverse (Authored → CI → Awaiting → Authored).
 func TestShiftTabRotatesSectionsBackwards(t *testing.T) {
 	m := New(stubRunner{}, time.Second, 10, WithCI(testCIConfig(t)))
