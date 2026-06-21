@@ -130,8 +130,9 @@ const (
 // CI-section fixed column widths. The LAST column width is computed dynamically
 // in renderCI so the sparkline fits every run (see ciSparkWidth).
 const (
-	ciNameW   = 26 // WORKFLOW
-	ciBranchW = 8  // BRANCH
+	ciNameW    = 26 // WORKFLOW
+	ciBranchW  = 8  // BRANCH
+	ciSparkGap = 3  // spaces between the LAST column and UPDATED (wider than colGap)
 )
 
 // ciSparkWidth returns the LAST-column width (cells) needed to show every run's
@@ -384,7 +385,7 @@ func (m *Model) renderCI() (lines []string, cursorLine int) {
 	lines = append(lines, sectionStyle.Render("CI Workflows"))
 	// column header, dimmed, aligned to the collapsed columns
 	hdr := padTo("WORKFLOW", ciNameW+colGap) + padTo("BRANCH", ciBranchW+colGap) +
-		padTo("LAST", sparkW+colGap) + "UPDATED"
+		padTo("LAST", sparkW+ciSparkGap) + "UPDATED"
 	lines = append(lines, dimStyle.Render(hdr))
 	if len(m.workflows) == 0 {
 		lines = append(lines, dimStyle.Render("  (none)"))
@@ -432,8 +433,8 @@ func (m *Model) renderCI() (lines []string, cursorLine int) {
 				updated = humanizeSince(m.now().Sub(w.Runs[0].UpdatedAt)) + " ago"
 			}
 			runs := w.Runs // newest-first; the LAST column scales to fit them all
-			plainSpark := padTo(sparklinePlain(runs), sparkW+colGap)
-			colorSpark := padToWidth(sparkline(runs), ansi.StringWidth(sparklinePlain(runs)), sparkW+colGap)
+			plainSpark := padTo(sparklinePlain(runs), sparkW+ciSparkGap)
+			colorSpark := padToWidth(sparkline(runs), ansi.StringWidth(sparklinePlain(runs)), sparkW+ciSparkGap)
 			appendRow(name+blankBranch+plainSpark+updated,
 				name+blankBranch+colorSpark+dimStyle.Render(updated))
 		}
@@ -445,8 +446,8 @@ func (m *Model) renderCI() (lines []string, cursorLine int) {
 				// (BRANCH), status glyph (LAST), "<updated> ago (<runtime>)" (UPDATED).
 				num := padTo(fmt.Sprintf("    #%d", r.RunNumber), ciNameW+colGap)
 				rbranch := padTo(r.Branch, ciBranchW+colGap)
-				glyphPlain := padTo(st.Symbol(), sparkW+colGap)
-				glyphColored := padToWidth(ciRunStyle(st).Render(st.Symbol()), ansi.StringWidth(st.Symbol()), sparkW+colGap)
+				glyphPlain := padTo(st.Symbol(), sparkW+ciSparkGap)
+				glyphColored := padToWidth(ciRunStyle(st).Render(st.Symbol()), ansi.StringWidth(st.Symbol()), sparkW+ciSparkGap)
 				upd := ""
 				if !r.UpdatedAt.IsZero() {
 					upd = humanizeSince(m.now().Sub(r.UpdatedAt)) + " ago"
