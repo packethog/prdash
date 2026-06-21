@@ -295,3 +295,21 @@ func TestLoadCIInvalidProviderDisablesDebug(t *testing.T) {
 	}
 	_ = c
 }
+
+func TestLoadCILimitNoUpperCap(t *testing.T) {
+	c, err := parseCI(ciInput{
+		Limit:     100,
+		Provider:  "claude",
+		Prompt:    "x {{.URL}}",
+		Workflows: []Workflow{{Repo: "a/b", Workflow: "w.yml", Limit: 250}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Limit != 100 {
+		t.Errorf("ci.limit = %d, want 100 (no upper clamp)", c.Limit)
+	}
+	if got := c.LimitFor(c.Workflows[0]); got != 250 {
+		t.Errorf("LimitFor = %d, want 250 (no upper clamp)", got)
+	}
+}

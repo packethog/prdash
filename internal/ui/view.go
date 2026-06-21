@@ -476,11 +476,10 @@ func (m *Model) ciDetailLines() []string {
 		b = append(b, ind+dimStyle.Render("loading details…"))
 	}
 	if len(m.detail.Jobs) > 0 {
-		parts := make([]string, 0, len(m.detail.Jobs))
+		b = append(b, ind+dimStyle.Render("jobs:"))
 		for _, j := range m.detail.Jobs {
-			parts = append(parts, jobGlyph(j)+" "+j.Name)
+			b = append(b, ind+"  "+jobGlyph(j)+" "+j.Name)
 		}
-		b = append(b, ind+dimStyle.Render("jobs: ")+strings.Join(parts, "   "))
 	}
 	if job, step, ok := m.detail.FailedStep(); ok {
 		label := job

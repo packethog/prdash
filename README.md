@@ -194,7 +194,7 @@ review:
   prompt: "Run the consensus-pr-review skill on {{.URL}}."
 
 ci:
-  limit: 5                 # default last-N runs per workflow (1–20, default 5)
+  limit: 5                 # default last-N runs per workflow (default 5; no upper bound)
   provider: claude         # debug-dispatch provider: "claude" or "codex"
   args: ["--permission-mode", "auto"]   # optional flags before the prompt
   prompt: |
@@ -224,8 +224,8 @@ ci:
 
 ### `ci` fields
 
-- `limit` — default number of runs to fetch per workflow (clamped to 1–20;
-  defaults to 5 when omitted or zero).
+- `limit` — default number of runs to fetch per workflow (defaults to 5 when
+  omitted or zero; no upper bound — `gh run list` paginates large values).
 - `provider` — `"claude"` or `"codex"`. Required for debug dispatch (`d`).
 - `args` — optional flags passed to the provider before the prompt.
 - `prompt` — a Go `text/template` for the debug dispatch prompt. Required when

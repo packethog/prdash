@@ -190,10 +190,7 @@ type Workflow struct {
 	SummaryFile     string // file within the artifact (defaults to analysis.txt)
 }
 
-const (
-	defaultCILimit = 5
-	maxCILimit     = 20
-)
+const defaultCILimit = 5
 
 // ciInput is the raw, pre-validation CI config (decoded YAML or test input).
 type ciInput struct {
@@ -204,12 +201,12 @@ type ciInput struct {
 	Workflows []Workflow
 }
 
+// clampLimit normalizes a configured run limit: a non-positive value falls back
+// to the default; any positive value is used as-is (no upper bound — `gh run
+// list` paginates large limits).
 func clampLimit(n int) int {
 	if n <= 0 {
 		return defaultCILimit
-	}
-	if n > maxCILimit {
-		return maxCILimit
 	}
 	return n
 }
