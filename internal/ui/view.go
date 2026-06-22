@@ -546,6 +546,8 @@ func (m *Model) promptLines() []string {
 			return []string{promptStyle.Render("   ↳ ✗ can't merge: " + strings.Join(blk, ", ") + "   esc")}
 		}
 		return []string{promptStyle.Render("   ↳ merge ‹ " + m.method.String() + " ›   ←/→ method   ⏎ merge   esc cancel")}
+	case modalPRRerun:
+		return []string{promptStyle.Render("   ↳ rerun failed CI for " + m.modalPR.Ref() + "?   ⏎ rerun   esc cancel")}
 	}
 	return nil
 }
@@ -630,6 +632,11 @@ func (m *Model) View() string {
 		if m.prDebugEligible() {
 			if p, ok := m.selected(); ok && pr.CI(p) == pr.CIFailure {
 				keyText += "  d debug"
+			}
+		}
+		if m.section == secAuthored {
+			if p, ok := m.selected(); ok && pr.CI(p) == pr.CIFailure {
+				keyText += "  R rerun"
 			}
 		}
 		keyText += "  q quit"

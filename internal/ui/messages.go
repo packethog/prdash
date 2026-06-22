@@ -70,6 +70,15 @@ type summaryMsg struct {
 type ciDebugLaunchedMsg struct{ err error }
 type rerunDoneMsg struct{ run ci.Run }
 type rerunFailedMsg struct{ err error }
+type prRerunDoneMsg struct {
+	p     pr.PR
+	count int
+}
+type prRerunFailedMsg struct {
+	p     pr.PR
+	count int // runs reran before the failure
+	err   error
+}
 type openedURLMsg struct{ err error }
 
 func fetchCmd(r gh.Runner, limit int) tea.Cmd {
@@ -215,6 +224,18 @@ func ciDebugCmd(cmux gh.Runner, c config.CI, run ci.Run) tea.Cmd {
 			return ciDebugLaunchedMsg{err: err}
 		}
 		return ciDebugLaunchedMsg{err: gh.StartCIDebug(ctx, cmux, c.Provider, c.Args, prompt)}
+	}
+}
+
+func prRerunCmd(r gh.Runner, p pr.PR) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rerunTimeout)
+		defer cancel()
+		n, err := gh.RerunPRFailed(ctx, r, p.Repo, p.HeadRefName, p.HeadSHA)
+		if err != nil {
+			return prRerunFailedMsg{p: p, count: n, err: err}
+		}
+		return prRerunDoneMsg{p: p, count: n}
 	}
 }
 

@@ -2,8 +2,27 @@ package gh
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
+
+type seqCall struct {
+	out []byte
+	err error
+}
+
+type seqRunner struct {
+	calls   []seqCall
+	i       int
+	gotArgs [][]string
+}
+
+func (s *seqRunner) Run(_ context.Context, args ...string) ([]byte, error) {
+	s.gotArgs = append(s.gotArgs, append([]string(nil), args...))
+	c := s.calls[s.i]
+	s.i++
+	return c.out, c.err
+}
 
 func TestListRunsArgsAndDecode(t *testing.T) {
 	out := `[
@@ -101,5 +120,89 @@ func TestRerunFailedArgs(t *testing.T) {
 	want := []string{"run", "rerun", "4820", "-R", "malbeclabs/infra", "--failed"}
 	if !equalArgs(f.gotArgs[0], want) {
 		t.Errorf("args = %v want %v", f.gotArgs[0], want)
+	}
+}
+
+func TestRerunPRFailedFiltersAndReruns(t *testing.T) {
+	list := `[
+	  {"databaseId":1,"headSha":"abc","status":"completed","conclusion":"failure"},
+	  {"databaseId":2,"headSha":"abc","status":"completed","conclusion":"success"},
+	  {"databaseId":3,"headSha":"abc","status":"completed","conclusion":"timed_out"},
+	  {"databaseId":4,"headSha":"old","status":"completed","conclusion":"failure"},
+	  {"databaseId":5,"headSha":"abc","status":"in_progress","conclusion":""},
+	  {"databaseId":6,"headSha":"abc","status":"completed","conclusion":"cancelled"}
+	]`
+	f := &fakeRunner{out: []byte(list)}
+	n, err := RerunPRFailed(context.Background(), f, "o/r", "feat", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 { // only runs 1 and 3 qualify
+		t.Fatalf("count = %d, want 2", n)
+	}
+	// call 0 = run list; calls 1..2 = rerun of ids 1 and 3 (order preserved)
+	if len(f.gotArgs) != 3 {
+		t.Fatalf("calls = %d, want 3 (1 list + 2 rerun)", len(f.gotArgs))
+	}
+	wantList := []string{"run", "list", "-R", "o/r", "--branch", "feat", "--limit", "50",
+		"--json", "databaseId,headSha,status,conclusion"}
+	if !equalArgs(f.gotArgs[0], wantList) {
+		t.Errorf("list args = %v", f.gotArgs[0])
+	}
+	for i, id := range []string{"1", "3"} {
+		want := []string{"run", "rerun", id, "-R", "o/r", "--failed"}
+		if !equalArgs(f.gotArgs[i+1], want) {
+			t.Errorf("rerun %d args = %v, want %v", i, f.gotArgs[i+1], want)
+		}
+	}
+}
+
+func TestRerunPRFailedZeroMatches(t *testing.T) {
+	list := `[{"databaseId":2,"headSha":"abc","status":"completed","conclusion":"success"}]`
+	f := &fakeRunner{out: []byte(list)}
+	n, err := RerunPRFailed(context.Background(), f, "o/r", "feat", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("count = %d, want 0", n)
+	}
+	if len(f.gotArgs) != 1 {
+		t.Errorf("should make only the list call, got %d calls", len(f.gotArgs))
+	}
+}
+
+// A rerun failure mid-way returns the count reran so far plus the error. Needs a
+// runner that returns per-call outputs/errors (list ok, rerun #1 ok, rerun #2 err).
+func TestRerunPRFailedReturnsCountOnError(t *testing.T) {
+	list := `[
+	  {"databaseId":1,"headSha":"abc","status":"completed","conclusion":"failure"},
+	  {"databaseId":2,"headSha":"abc","status":"completed","conclusion":"failure"}
+	]`
+	s := &seqRunner{calls: []seqCall{
+		{out: []byte(list)},       // run list
+		{},                        // rerun id 1 → ok
+		{err: errors.New("boom")}, // rerun id 2 → fails
+	}}
+	n, err := RerunPRFailed(context.Background(), s, "o/r", "feat", "abc")
+	if err == nil {
+		t.Fatal("want error from the failing rerun")
+	}
+	if n != 1 {
+		t.Errorf("count = %d, want 1 (only the first rerun succeeded)", n)
+	}
+}
+
+func TestRerunPRFailedEmptySHANoOp(t *testing.T) {
+	f := &fakeRunner{out: []byte(`[{"databaseId":1,"headSha":"","status":"completed","conclusion":"failure"}]`)}
+	n, err := RerunPRFailed(context.Background(), f, "o/r", "feat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("count = %d, want 0 for empty headSHA", n)
+	}
+	if len(f.gotArgs) != 0 {
+		t.Errorf("empty headSHA must make no gh calls, got %d", len(f.gotArgs))
 	}
 }

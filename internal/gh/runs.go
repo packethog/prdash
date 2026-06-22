@@ -107,6 +107,54 @@ func RerunFailed(ctx context.Context, r Runner, repo string, runID int64) error 
 	return err
 }
 
+// prRunListCap bounds how many recent branch runs we scan for the head commit.
+// A single head commit's Actions runs won't realistically exceed this.
+const prRunListCap = 50
+
+type prRunNode struct {
+	DatabaseID int64  `json:"databaseId"`
+	HeadSha    string `json:"headSha"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+}
+
+// RerunPRFailed reruns the failed jobs of every Actions run on the PR's head
+// commit. It lists runs for the branch, keeps completed runs whose headSha
+// matches and whose conclusion is failure/timed_out/startup_failure, and calls
+// `gh run rerun <id> --failed` on each. Returns the number of runs reran.
+func RerunPRFailed(ctx context.Context, r Runner, repo, branch, headSHA string) (int, error) {
+	// Guard: an empty target SHA would match runs whose headSha decodes empty and
+	// could rerun unrelated branch runs. Nothing to do without a real head commit.
+	if headSHA == "" {
+		return 0, nil
+	}
+	out, err := r.Run(ctx, "run", "list", "-R", repo, "--branch", branch,
+		"--limit", strconv.Itoa(prRunListCap), "--json", "databaseId,headSha,status,conclusion")
+	if err != nil {
+		return 0, err
+	}
+	var nodes []prRunNode
+	if err := json.Unmarshal(out, &nodes); err != nil {
+		return 0, fmt.Errorf("decode run list: %w", err)
+	}
+	n := 0
+	for _, node := range nodes {
+		if node.Status != "completed" || node.HeadSha != headSHA {
+			continue
+		}
+		switch node.Conclusion {
+		case "failure", "timed_out", "startup_failure":
+		default:
+			continue
+		}
+		if err := RerunFailed(ctx, r, repo, node.DatabaseID); err != nil {
+			return n, fmt.Errorf("rerun run %d in %s: %w", node.DatabaseID, repo, err)
+		}
+		n++
+	}
+	return n, nil
+}
+
 type runNode struct {
 	DatabaseID int64  `json:"databaseId"`
 	Number     int    `json:"number"`

@@ -11,7 +11,7 @@ fragment pr on PullRequest {
   mergeable
   mergeStateStatus
   headRefName
-  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } }
   latestReviews(first: 50) { nodes { state } }
   latestOpinionatedReviews(first: 50) { nodes { state } }
 }`
